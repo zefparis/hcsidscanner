@@ -1,0 +1,30 @@
+{
+  "name": "@hcs/id-scanner-native",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.73",
+    "react-native-nfc-manager": ">=3",
+    "react-native-vision-camera": ">=4",
+    "vision-camera-mrz-scanner": ">=2"
+  },
+  "dependencies": {
+    "@hcs/id-scanner-core": "*",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "typescript": "^5.6.3"
+  }
+}

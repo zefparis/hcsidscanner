@@ -15,7 +15,15 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 
 import { theme, STATUS_COLOR } from '../lib/theme';
 import { useIDVerification } from '../hooks/useIDVerification';
-import type { KycRegistrationPayload, StepStatus } from '../types';
+import type { DocumentData, StepStatus } from '@hcs/id-scanner-core';
+
+interface KycRegistrationPayload {
+  documentData: Omit<DocumentData, 'rawMRZ'>;
+  faceMatchScore: number;
+  kycScore: number;
+  timestamp: string;
+  tenantId: string;
+}
 
 const HCS_API_URL =
   import.meta.env.VITE_HCS_API_URL ||

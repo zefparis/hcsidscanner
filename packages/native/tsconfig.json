@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../core/src/modules.d.ts"
+  ]
+}

@@ -5,7 +5,7 @@
 import { Check, Loader2, X } from 'lucide-react';
 
 import { STATUS_COLOR, theme } from '../lib/theme';
-import type { StepStatus, StepperState } from '../types';
+import type { StepStatus, StepperState } from '@hcs/id-scanner-core';
 
 const STEPS: { id: keyof StepperState; label: string }[] = [
   { id: 'document', label: 'Document' },

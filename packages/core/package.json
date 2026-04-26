@@ -1,0 +1,26 @@
+{
+  "name": "@hcs/id-scanner-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.1037.0",
+    "image-js": "^0.21.9",
+    "mrz": "^5.0.2",
+    "mrz-detection": "^0.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "typescript": "^5.6.3"
+  }
+}

@@ -12,13 +12,12 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { Camera, Loader2, RefreshCw } from 'lucide-react';
 
 import { theme } from '../lib/theme';
 import { apiPost, useIDVerification } from '../hooks/useIDVerification';
-import type { FaceMatchResult } from '../types';
+import type { FaceMatchResult } from '@hcs/id-scanner-core';
 
 const MATCH_THRESHOLD = 80;
 const REVIEW_THRESHOLD = 70;
@@ -33,7 +32,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export function FaceMatch() {
-  const navigate = useNavigate();
   const webcamRef = useRef<Webcam>(null);
 
   const {
@@ -51,7 +49,7 @@ export function FaceMatch() {
 
   // Guard: if the user lands here without a document scan, send them back.
   if (!documentImageBase64) {
-    navigate('/', { replace: true });
+    setCurrentStep('DOCUMENT');
     return null;
   }
 
@@ -105,8 +103,7 @@ export function FaceMatch() {
 
   const onContinue = useCallback(() => {
     setCurrentStep('RESULT');
-    navigate('/result');
-  }, [navigate, setCurrentStep]);
+  }, [setCurrentStep]);
 
   return (
     <section style={{ display: 'grid', gap: 18 }}>

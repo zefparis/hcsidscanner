@@ -15,7 +15,7 @@ import type {
   Step,
   StepStatus,
   StepperState,
-} from '../types';
+} from '@hcs/id-scanner-core';
 
 interface IDVerificationState {
   currentStep: Step;

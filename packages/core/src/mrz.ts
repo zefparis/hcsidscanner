@@ -1,39 +1,40 @@
 /**
- * POST /api/analyze-mrz
- *
- * 100% open-source MRZ extraction (no Signicat, no third-party API).
+ * MRZ analysis — pure function consumed by both server (Vercel functions)
+ * and any other Node-side caller.
  *
  * Pipeline:
  *   1. base64 → Buffer
- *   2. `image-js` decodes the JPEG/PNG into a pixel matrix
- *   3. `mrz-detection.getMrz()`   — segment + crop the MRZ band
- *   4. `mrz-detection.readMrz()`  — OCR the cropped band (svm + ocrb)
- *   5. `mrz.parse()`              — parse + validate every check digit
- *
- * Body : { imageBase64: string }
- * 200  : DocumentData
- * 4xx  : { error: 'invalid_request' | 'no_mrz_found' | 'parse_failed' }
+ *   2. `image-js`        decodes the JPEG/PNG into a pixel matrix
+ *   3. `mrz-detection.getMrz()`  segments + crops the MRZ band
+ *   4. `mrz-detection.readMrz()` OCRs the cropped band (svm + ocrb)
+ *   5. `mrz.parse()`     parses + validates every check digit
  *
  * The image bytes never leave the function and are never logged.
+ *
+ * `mrz-detection` and `image-js` are CommonJS modules — we use dynamic
+ * `await import()` to stay compatible with both `bundler` and `nodenext`
+ * module resolution settings.
  */
 
-import {
-  HttpError,
-  readJson,
-  sendJson,
-  withErrorBoundary,
-  type ApiHandler,
-} from './_helpers.js';
-
-interface AnalyzeBody {
-  imageBase64?: string;
-}
+import type { DocumentData } from './types.js';
 
 interface MrzParseResult {
   format: string;
   valid: boolean;
   fields: Record<string, string | null | undefined>;
   documentNumber: string | null;
+}
+
+export class MRZError extends Error {
+  constructor(
+    public readonly code:
+      | 'invalid_input'
+      | 'no_mrz_found'
+      | 'parse_failed'
+      | 'engine_unavailable',
+  ) {
+    super(code);
+  }
 }
 
 function decodeBase64(input: string): Buffer {
@@ -44,7 +45,7 @@ function decodeBase64(input: string): Buffer {
 /**
  * MRZ dates come back as `YYMMDD`. Convert to ISO `YYYY-MM-DD`.
  *
- * The pivot for the century is 1930 (ICAO rec): 30-99 → 19xx, 00-29 → 20xx.
+ * Century pivot follows the ICAO recommendation: 30-99 → 19xx, 00-29 → 20xx.
  */
 function mrzDateToIso(yymmdd: string | null | undefined): string {
   if (!yymmdd || !/^\d{6}$/.test(yymmdd)) return '';
@@ -62,43 +63,35 @@ function isExpired(isoDate: string): boolean {
   return ts < Date.now();
 }
 
-const handler: ApiHandler = async (req, res) => {
-  if (req.method !== 'POST') {
-    throw new HttpError(405, 'method_not_allowed');
-  }
-
-  const { imageBase64 } = await readJson<AnalyzeBody>(req);
-  if (!imageBase64) {
-    throw new HttpError(400, 'invalid_request');
-  }
+/**
+ * Read + parse an MRZ from a base64-encoded image.
+ *
+ * @param imageBase64 — JPEG/PNG bytes, with or without `data:` prefix.
+ * @throws {MRZError} on any failure (no PII leakage in error messages).
+ */
+export async function analyzeMRZ(imageBase64: string): Promise<DocumentData> {
+  if (!imageBase64) throw new MRZError('invalid_input');
 
   const buffer = decodeBase64(imageBase64);
-  if (buffer.byteLength === 0) {
-    throw new HttpError(400, 'invalid_request');
-  }
+  if (buffer.byteLength === 0) throw new MRZError('invalid_input');
 
-  // ── 1. Decode the image ──────────────────────────────────────────────
-  // `image-js` is a transitive dep of mrz-detection, so it's guaranteed
-  // to be available without an extra direct dependency.
+  // ── 1. Decode the image ─────────────────────────────────────────────
   const imageJs = (await import('image-js')) as unknown as {
     Image?: { load: (b: Buffer) => Promise<unknown> };
     default?: { Image?: { load: (b: Buffer) => Promise<unknown> } };
   };
   const Image = imageJs.Image ?? imageJs.default?.Image;
-  if (!Image) {
-    throw new HttpError(500, 'server_misconfigured');
-  }
+  if (!Image) throw new MRZError('engine_unavailable');
 
   let image: unknown;
   try {
     image = await Image.load(buffer);
   } catch {
-    throw new HttpError(400, 'invalid_request');
+    throw new MRZError('invalid_input');
   }
 
-  // ── 2. Crop to the MRZ band ─────────────────────────────────────────
-  // 3. OCR the band
-  const mrzDetectionMod = (await import('mrz-detection')) as unknown as {
+  // ── 2-3. Crop + OCR the MRZ band ────────────────────────────────────
+  const detection = (await import('mrz-detection')) as unknown as {
     getMrz?: (img: unknown) => unknown;
     readMrz?: (
       img: unknown,
@@ -110,19 +103,15 @@ const handler: ApiHandler = async (req, res) => {
       ) => Promise<{ mrz: string[]; rois: unknown[] }>;
     };
   };
-  const getMrz =
-    mrzDetectionMod.getMrz ?? mrzDetectionMod.default?.getMrz;
-  const readMrz =
-    mrzDetectionMod.readMrz ?? mrzDetectionMod.default?.readMrz;
-  if (!getMrz || !readMrz) {
-    throw new HttpError(500, 'server_misconfigured');
-  }
+  const getMrz = detection.getMrz ?? detection.default?.getMrz;
+  const readMrz = detection.readMrz ?? detection.default?.readMrz;
+  if (!getMrz || !readMrz) throw new MRZError('engine_unavailable');
 
   let cropped: unknown;
   try {
     cropped = getMrz(image);
   } catch {
-    throw new HttpError(400, 'no_mrz_found');
+    throw new MRZError('no_mrz_found');
   }
 
   let lines: string[];
@@ -130,34 +119,30 @@ const handler: ApiHandler = async (req, res) => {
     const result = await readMrz(cropped);
     lines = result.mrz.map((l) => String(l).trim()).filter(Boolean);
   } catch {
-    throw new HttpError(400, 'no_mrz_found');
+    throw new MRZError('no_mrz_found');
   }
-  if (lines.length < 2) {
-    throw new HttpError(400, 'no_mrz_found');
-  }
+  if (lines.length < 2) throw new MRZError('no_mrz_found');
 
-  // ── 4. Parse + validate check digits ─────────────────────────────────
+  // ── 4. Parse + validate check digits ────────────────────────────────
   const mrzMod = (await import('mrz')) as unknown as {
     parse?: (lines: string[]) => MrzParseResult;
     default?: { parse?: (lines: string[]) => MrzParseResult };
   };
   const parse = mrzMod.parse ?? mrzMod.default?.parse;
-  if (!parse) {
-    throw new HttpError(500, 'server_misconfigured');
-  }
+  if (!parse) throw new MRZError('engine_unavailable');
 
   let parsed: MrzParseResult;
   try {
     parsed = parse(lines);
   } catch {
-    throw new HttpError(400, 'parse_failed');
+    throw new MRZError('parse_failed');
   }
 
   const f = parsed.fields ?? {};
   const expirationIso = mrzDateToIso(f.expirationDate ?? '');
   const birthIso = mrzDateToIso(f.birthDate ?? '');
 
-  const documentData = {
+  return {
     firstName: f.firstName ?? '',
     lastName: f.lastName ?? '',
     nationality: f.nationality ?? '',
@@ -171,14 +156,4 @@ const handler: ApiHandler = async (req, res) => {
     checkDigitsValid: Boolean(parsed.valid),
     rawMRZ: lines,
   };
-
-  // Numeric/structural log only — no PII.
-  // eslint-disable-next-line no-console
-  console.log(
-    `[analyze-mrz] format=${parsed.format} valid=${parsed.valid} lines=${lines.length}`,
-  );
-
-  sendJson(res, 200, documentData);
-};
-
-export default withErrorBoundary(handler);
+}

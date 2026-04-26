@@ -9,7 +9,6 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import {
   AlertTriangle,
@@ -22,7 +21,7 @@ import {
 
 import { theme, STATUS_COLOR } from '../lib/theme';
 import { apiPost, useIDVerification } from '../hooks/useIDVerification';
-import type { DocumentData } from '../types';
+import type { DocumentData } from '@hcs/id-scanner-core';
 
 type ScannerState = 'IDLE' | 'CAPTURING' | 'ANALYZING' | 'RESULT' | 'ERROR';
 
@@ -38,7 +37,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export function DocumentScanner() {
-  const navigate = useNavigate();
   const webcamRef = useRef<Webcam>(null);
 
   const {
@@ -98,8 +96,7 @@ export function DocumentScanner() {
 
   const onContinue = useCallback(() => {
     setCurrentStep('FACE_MATCH');
-    navigate('/face-match');
-  }, [navigate, setCurrentStep]);
+  }, [setCurrentStep]);
 
   return (
     <section style={{ display: 'grid', gap: 18 }}>

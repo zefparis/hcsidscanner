@@ -1,145 +1,177 @@
-# HCS ID Scanner
+# HCS ID Scanner — monorepo
 
-Open-source KYC identity verification — **no Signicat, no third-party
-identity API**. The whole flow runs in-app:
-
-1. **Document scan** — `react-webcam` capture, MRZ extracted server-side
-   with `mrz-detection` (segmentation + OCR) and parsed with `mrz` (full
-   ICAO check-digit validation).
-2. **Selfie + face match** — `react-webcam` selfie compared with the
-   document recto via **AWS Rekognition CompareFaces** (≈ $0.001 / call).
-3. **Verdict + register** — composite KYC score posted to HCS-U7.
-
-Zero external redirect. Zero paid API except Rekognition.
-
-## Stack
-
-| Layer       | Choice                                              |
-| ----------- | --------------------------------------------------- |
-| Framework   | React 19 + Vite 8 + TypeScript                      |
-| State       | zustand (`useIDVerification`)                       |
-| Routing     | react-router-dom v7                                 |
-| Camera      | react-webcam                                        |
-| MRZ         | `mrz-detection` (image-js + OCR) + `mrz` (parse)    |
-| Face match  | `@aws-sdk/client-rekognition` CompareFaces          |
-| Server code | Vite middleware (dev) → Vercel serverless (prod)    |
-
-## Layout
+Open-source KYC identity verification — **MRZ + face match + optional
+NFC chip read**. No external identity-provider redirect, no per-call
+licence cost (only AWS Rekognition CompareFaces ≈ $0.001/verif).
 
 ```
 hcs-id-scanner/
-├─ api/
-│  ├─ _helpers.ts        ← Vercel-style http helpers
-│  ├─ analyze-mrz.ts     ← POST /api/analyze-mrz
-│  └─ face-match.ts      ← POST /api/face-match
-├─ src/
-│  ├─ components/
-│  │  ├─ DocumentScanner.tsx     (Étape 1)
-│  │  ├─ FaceMatch.tsx           (Étape 2)
-│  │  ├─ IDVerificationResult.tsx (Étape 3)
-│  │  └─ Stepper.tsx
-│  ├─ hooks/
-│  │  └─ useIDVerification.ts    ← zustand store + apiPost
-│  ├─ lib/
-│  │  └─ theme.ts                ← HCS-U7 dark theme tokens
-│  ├─ App.tsx
-│  └─ main.tsx
-├─ vite-plugin-api.ts            ← mounts /api/* in dev
-└─ vite.config.ts
+├─ packages/
+│  ├─ core/     ← @hcs/id-scanner-core    (analyzeMRZ, compareFaces, types)
+│  ├─ react/    ← @hcs/id-scanner-react   (web/PWA components + hook)
+│  └─ native/   ← @hcs/id-scanner-native  (RN — VisionCamera + NFC)
+├─ apps/
+│  └─ demo-web/ ← Vite reference app (deployed at hcsidscanner.vercel.app)
+├─ codemagic.yaml
+└─ vercel.json
 ```
 
-## Environment
-
-| Variable                    | Where  | Notes                              |
-| --------------------------- | ------ | ---------------------------------- |
-| `VITE_HCS_API_URL`          | client | HCS-U7 KYC ingestion endpoint      |
-| `VITE_HCS_TENANT_ID`        | client | tenant tag passed in the payload   |
-| `AWS_ACCESS_KEY_ID`         | server | IAM key with Rekognition access    |
-| `AWS_SECRET_ACCESS_KEY`     | server |                                    |
-| `AWS_REGION`                | server | default `eu-west-1`                |
-| `SUPABASE_URL` (opt.)       | server | optional — portrait persistence    |
-| `SUPABASE_SERVICE_ROLE_KEY` | server |                                    |
-| `SUPABASE_BUCKET`           | server | default `kyc-documents`            |
-
-See `.env.example`.
-
-## API contract
-
-### `POST /api/analyze-mrz`
-
-```jsonc
-// request
-{ "imageBase64": "<JPEG, with or without data: prefix>" }
-// 200
-{
-  "firstName": "JEAN",
-  "lastName": "DUPONT",
-  "nationality": "FRA",
-  "dateOfBirth": "1985-04-12",
-  "documentNumber": "12AB34567",
-  "expirationDate": "2030-04-11",
-  "documentType": "P",
-  "issuingCountry": "FRA",
-  "sex": "M",
-  "isExpired": false,
-  "checkDigitsValid": true,
-  "rawMRZ": ["P<FRADUPONT<<JEAN<<<<<<<<<<<<<<<<<<<<<<<<<<<", "12AB345672FRA8504128M3004115<<<<<<<<<<<<<<06"]
-}
-// errors
-{ "error": "no_mrz_found" | "parse_failed" | "invalid_request" }
-```
-
-### `POST /api/face-match`
-
-```jsonc
-{
-  "sourceImageBase64": "<live selfie JPEG>",
-  "targetImageBase64": "<document recto JPEG>"
-}
-// 200
-{ "similarity": 92.4, "confidence": 99.8, "isMatch": true, "threshold": 80 }
-```
-
-Threshold = 80 % (selfie vs paper photo, no NFC chip portrait).
-Image bytes are never logged — only numeric verdicts.
-
-## KYC composite score
-
-```
-score = (mrzValid ? 1.0 : 0.5) * 0.6   +   (similarity / 100) * 0.4
-       └────────── 60 % ──────────┘     └──────── 40 % ────────┘
-```
-
-Where `mrzValid = checkDigitsValid && !isExpired`. Posted to
-`VITE_HCS_API_URL/api/kyc/register`.
-
-## Dev
+## Quick start
 
 ```bash
-npm install
-cp .env.example .env.local        # fill AWS keys
-npm run dev                        # http://localhost:5173
+npm install --include=dev --legacy-peer-deps
+npm run dev          # apps/demo-web on http://localhost:5173
 ```
 
-The dev server mounts `api/*` handlers in-process via `vite-plugin-api.ts`,
-so MRZ analysis and face matching work end-to-end without a separate
-backend.
+You'll need AWS Rekognition credentials in `apps/demo-web/.env.local`:
 
-## Production
+```
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=eu-west-1
+VITE_HCS_API_URL=https://hcs-u7-backend-kk0n.onrender.com
+VITE_HCS_TENANT_ID=hcs-id-scanner-demo
+```
 
-`npm run build` — `dist/` is the static site, `api/*.ts` are picked up
-verbatim by Vercel as serverless functions. Same handlers in dev and prod.
+## Build & type-check
 
-## Privacy notes
+```bash
+npm run type-check       # type-check all 3 packages + demo-web
+npm run build            # build the demo-web bundle (deployed by Vercel)
+```
 
-- Document image and selfie never leave the function memory.
-- Only structured fields + numeric scores are logged.
-- The `rawMRZ` array is stripped before forwarding the payload to HCS-U7.
-- Document numbers are subject to GDPR — make sure your HCS-U7 tenant
-  has a documented retention policy.
+The 3 packages are **source-only** (no `dist/` build step needed) —
+their `package.json` `main` points directly at `./src/index.ts`. This
+keeps integration ergonomic in monorepos and `file:` consumers.
+
+## Package: `@hcs/id-scanner-core`
+
+Pure TS — Node-only at runtime (`mrz-detection`, `image-js`, AWS SDK).
+
+```ts
+import { analyzeMRZ, compareFaces, computeKycScore } from '@hcs/id-scanner-core';
+
+const doc = await analyzeMRZ(imageBase64);
+const verdict = await compareFaces(selfieBase64, docBase64);
+const score = computeKycScore({
+  mrzValid: doc.checkDigitsValid,
+  documentExpired: doc.isExpired,
+  faceSimilarity: verdict.similarity,
+});
+```
+
+## Package: `@hcs/id-scanner-react`
+
+Drop-in component for any React 18+ app:
+
+```tsx
+import { IDVerificationFlow } from '@hcs/id-scanner-react';
+
+<IDVerificationFlow
+  config={{
+    tenantId,
+    employeeId,
+    minFaceMatchScore: 80,
+    requireFaceMatch: true,
+    hcsApiUrl: process.env.HCS_API_URL,
+  }}
+  onComplete={(result) => {
+    if (result.kycScore >= 0.7) continueOnboarding(result);
+  }}
+  onError={(code) => toast.error(code)}
+/>
+```
+
+The component drives its own internal state (zustand). It expects two
+backend endpoints (`/api/analyze-mrz`, `/api/face-match`) — see
+`apps/demo-web/api/*.ts` for a Vercel-style reference implementation.
+
+## Package: `@hcs/id-scanner-native`
+
+React Native components — VisionCamera live MRZ detection + NFC chip
+read.
+
+```tsx
+import { IDVerificationFlowNative } from '@hcs/id-scanner-native';
+
+<IDVerificationFlowNative
+  config={{ tenantId, minFaceMatchScore: 80 }}
+  endpoints={{
+    analyzeMrz: 'https://api.example.com/api/analyze-mrz',
+    faceMatch:  'https://api.example.com/api/face-match',
+  }}
+  enableNfc={true}
+  onComplete={(r) => navigation.replace('Onboarding', { kyc: r })}
+  onError={(c) => Alert.alert('KYC failed', c)}
+/>
+```
+
+Peer deps (the host app must install them):
+- `react-native-vision-camera` ≥ 4
+- `vision-camera-mrz-scanner` ≥ 2
+- `react-native-nfc-manager` ≥ 3
+
+## Integrating in HV-GUARD modules
+
+### WorkGuard (web)
+
+```jsonc
+// workguard-web/package.json
+{
+  "dependencies": {
+    "@hcs/id-scanner-react": "file:../../hcs-id-scanner/packages/react"
+  }
+}
+```
+
+```tsx
+// workguard-web/src/onboarding/EnrolKyc.tsx
+import { IDVerificationFlow } from '@hcs/id-scanner-react';
+// …
+```
+
+### WorkGuard (React Native)
+
+```jsonc
+// workguard-rn/package.json
+{
+  "dependencies": {
+    "@hcs/id-scanner-native": "file:../../hcs-id-scanner/packages/native"
+  }
+}
+```
+
+```tsx
+// workguard-rn/src/screens/EnrolKycScreen.tsx
+import { IDVerificationFlowNative } from '@hcs/id-scanner-native';
+// …
+```
+
+### PayGuard / AccessGuard / SignGuard / EdGuard
+
+Same pattern — pick `@hcs/id-scanner-react` for the web dashboards and
+`@hcs/id-scanner-native` for the mobile companion apps. Each module
+forwards its own `tenantId` and `employeeId` (when applicable) so the
+verdict can be persisted under the right HCS-U7 record.
+
+## CI/CD
+
+- **Vercel** — pushes to `main` build `apps/demo-web` (see
+  `vercel.json`). Set the AWS keys in **Settings → Environment
+  Variables** before pushing.
+- **Codemagic** — `codemagic.yaml` defines `android` (Linux runner) and
+  `ios` (Mac M2 runner) workflows that produce a signed APK / IPA.
+  Trigger from the Codemagic UI; no local Mac required.
+
+## Privacy & security
+
+- Document and selfie bytes never leave the function memory.
+- AWS keys are server-only; never prefixed `VITE_`.
+- `rawMRZ` is stripped from the payload posted to HCS-U7.
+- Document numbers are subject to GDPR — make sure your tenant has a
+  documented retention policy.
 
 ## Patents / origin
 
 Cognitive engine: HCS-U7 (FR2514274 + FR2514546). This module is the
-KYC front-door for HV-GUARD's identity-bound flows (WorkGuard
-enrolment, PayGuard onboarding, etc.).
+KYC front-door for HV-GUARD's identity-bound flows.
