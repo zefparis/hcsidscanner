@@ -1,61 +1,81 @@
 /**
- * useIDVerification — single source of truth for the 4-step KYC flow.
+ * useIDVerification — single source of truth for the 3-step KYC flow.
  *
- * Holds:
- *   - Stepper state machine
- *   - Signicat claims (after token exchange)
- *   - Face-match result
- *   - Final HCS-U7 registration verdict
- *
- * The verification context survives a full-page redirect through
- * sessionStorage so the post-OIDC callback can pick up where Étape 1 left off.
+ * Flow:
+ *   1. DOCUMENT     — react-webcam capture + /api/analyze-mrz
+ *   2. FACE_MATCH   — selfie + /api/face-match (Rekognition CompareFaces)
+ *   3. RESULT       — composite KYC score + register in HCS-U7
  */
 
 import { create } from 'zustand';
 
 import type {
+  DocumentData,
   FaceMatchResult,
-  SignicatClaims,
+  Step,
   StepStatus,
   StepperState,
 } from '../types';
 
 interface IDVerificationState {
+  currentStep: Step;
   steps: StepperState;
-  claims: SignicatClaims | null;
-  faceMatch: FaceMatchResult | null;
+
+  documentData: DocumentData | null;
+  /** Front-side document photo, kept for the face-match call. */
+  documentImageBase64: string | null;
+  selfieBase64: string | null;
+  faceMatchResult: FaceMatchResult | null;
+  kycScore: number | null;
+
   errorMessage: string | null;
 
+  // ── actions ──────────────────────────────────────────────────────────
   setStep: (id: keyof StepperState, status: StepStatus) => void;
-  setClaims: (claims: SignicatClaims | null) => void;
-  setFaceMatch: (result: FaceMatchResult | null) => void;
+  setCurrentStep: (step: Step) => void;
+  setDocumentData: (data: DocumentData | null) => void;
+  setDocumentImage: (img: string | null) => void;
+  setSelfie: (img: string | null) => void;
+  setFaceMatchResult: (r: FaceMatchResult | null) => void;
+  setKycScore: (score: number | null) => void;
   setError: (msg: string | null) => void;
   reset: () => void;
 }
 
 const initialSteps: StepperState = {
-  start: 'PENDING',
-  callback: 'PENDING',
+  document: 'PENDING',
   faceMatch: 'PENDING',
   result: 'PENDING',
 };
 
 export const useIDVerification = create<IDVerificationState>((set) => ({
+  currentStep: 'DOCUMENT',
   steps: initialSteps,
-  claims: null,
-  faceMatch: null,
+  documentData: null,
+  documentImageBase64: null,
+  selfieBase64: null,
+  faceMatchResult: null,
+  kycScore: null,
   errorMessage: null,
 
   setStep: (id, status) =>
     set((s) => ({ steps: { ...s.steps, [id]: status } })),
-  setClaims: (claims) => set({ claims }),
-  setFaceMatch: (result) => set({ faceMatch: result }),
-  setError: (msg) => set({ errorMessage: msg }),
+  setCurrentStep: (currentStep) => set({ currentStep }),
+  setDocumentData: (documentData) => set({ documentData }),
+  setDocumentImage: (documentImageBase64) => set({ documentImageBase64 }),
+  setSelfie: (selfieBase64) => set({ selfieBase64 }),
+  setFaceMatchResult: (faceMatchResult) => set({ faceMatchResult }),
+  setKycScore: (kycScore) => set({ kycScore }),
+  setError: (errorMessage) => set({ errorMessage }),
   reset: () =>
     set({
+      currentStep: 'DOCUMENT',
       steps: initialSteps,
-      claims: null,
-      faceMatch: null,
+      documentData: null,
+      documentImageBase64: null,
+      selfieBase64: null,
+      faceMatchResult: null,
+      kycScore: null,
       errorMessage: null,
     }),
 }));
@@ -87,8 +107,7 @@ export async function apiPost<T>(
     throw new Error('parse_error');
   }
   if (!res.ok) {
-    const code =
-      (data as { error?: string })?.error ?? `http_${res.status}`;
+    const code = (data as { error?: string })?.error ?? `http_${res.status}`;
     throw new Error(code);
   }
   return data as T;

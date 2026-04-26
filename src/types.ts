@@ -2,39 +2,44 @@
  * Cross-cutting types for the HCS ID Scanner KYC flow.
  *
  * Three boundaries:
- *   - Signicat OIDC claims (Étape 2 output)
- *   - Face-match result   (Étape 3 output)
+ *   - DocumentData       (Étape 1: MRZ extraction output)
+ *   - FaceMatchResult    (Étape 2: Rekognition CompareFaces output)
  *   - Stepper state machine
  */
 
 export type StepStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
 
-export type StepId = 'start' | 'callback' | 'face-match' | 'result';
+export type Step = 'DOCUMENT' | 'FACE_MATCH' | 'RESULT';
 
 export interface StepperState {
-  start: StepStatus;
-  callback: StepStatus;
+  document: StepStatus;
   faceMatch: StepStatus;
   result: StepStatus;
 }
 
 /**
- * Whitelisted OIDC claims returned by the server-side token-exchange.
- * The raw access_token is stripped before reaching the client.
+ * Structured data extracted from a document's MRZ band.
+ * The MRZ is the cryptographic-backed source of truth on travel documents:
+ * each field carries a check digit, validated by `mrz` on parse.
  */
-export interface SignicatClaims {
-  sub: string;
-  given_name?: string;
-  family_name?: string;
-  birthdate?: string;
-  document_number?: string;
-  document_type?: string;
-  expiry_date?: string;
-  nationality?: string;
-  /** base64-encoded JPEG portrait extracted from the chip (DG2). */
-  portrait?: string;
-  /** RFC3339 timestamp from Signicat indicating verification completion. */
-  verified_at?: string;
+export interface DocumentData {
+  firstName: string;
+  lastName: string;
+  nationality: string;
+  /** ISO 8601 — `YYYY-MM-DD` */
+  dateOfBirth: string;
+  documentNumber: string;
+  /** ISO 8601 — `YYYY-MM-DD` */
+  expirationDate: string;
+  /** `P` (passport) | `I` (ID card) | `V` (visa) | etc. */
+  documentType: string;
+  issuingCountry: string;
+  sex: string;
+  isExpired: boolean;
+  /** True iff every check digit in the MRZ matched. */
+  checkDigitsValid: boolean;
+  /** Raw MRZ lines — kept for debugging only, never persisted. */
+  rawMRZ: string[];
 }
 
 export interface FaceMatchResult {
@@ -45,11 +50,9 @@ export interface FaceMatchResult {
 }
 
 export interface KycRegistrationPayload {
-  claims: Omit<SignicatClaims, 'portrait'>;
+  documentData: Omit<DocumentData, 'rawMRZ'>;
   faceMatchScore: number;
-  documentType?: string;
-  isAuthentic: boolean;
+  kycScore: number;
   timestamp: string;
   tenantId: string;
-  portraitStorageKey?: string;
 }

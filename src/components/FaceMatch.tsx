@@ -1,11 +1,14 @@
 /**
- * Étape 3 — Face match.
+ * Étape 2 — Selfie + face match.
  *
- * Capture a live selfie via react-webcam, POST it (along with the chip
- * portrait kept in the in-memory store) to /api/face-match, render the
- * Rekognition CompareFaces verdict.
+ * Captures a live selfie and POSTs it together with the front-side document
+ * photo (kept in the store from Étape 1) to /api/face-match, which calls
+ * AWS Rekognition CompareFaces.
  *
- * Threshold = 90% similarity (Signicat-grade). < 70% = explicit failure.
+ * Thresholds:
+ *   ≥ 80%  → MATCH
+ *   70-80% → REVIEW (soft warning, retry allowed)
+ *   < 70%  → FAIL
  */
 
 import { useCallback, useRef, useState } from 'react';
@@ -17,69 +20,93 @@ import { theme } from '../lib/theme';
 import { apiPost, useIDVerification } from '../hooks/useIDVerification';
 import type { FaceMatchResult } from '../types';
 
-const HARD_FAIL_THRESHOLD = 70;
+const MATCH_THRESHOLD = 80;
+const REVIEW_THRESHOLD = 70;
+
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_request: 'Invalid request.',
+  no_face_detected:
+    'No face detected. Make sure your face is well-lit and centred.',
+  network_error: 'Network error. Check your connection and retry.',
+  parse_error: 'Unexpected response from the server.',
+  server_misconfigured: 'Server is not configured for face matching.',
+};
 
 export function FaceMatch() {
   const navigate = useNavigate();
   const webcamRef = useRef<Webcam>(null);
-  const [selfie, setSelfie] = useState<string | null>(null);
+
+  const {
+    documentImageBase64,
+    selfieBase64,
+    setSelfie,
+    faceMatchResult,
+    setFaceMatchResult,
+    setStep,
+    setCurrentStep,
+  } = useIDVerification();
+
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { claims, faceMatch, setFaceMatch, setStep } = useIDVerification();
+  // Guard: if the user lands here without a document scan, send them back.
+  if (!documentImageBase64) {
+    navigate('/', { replace: true });
+    return null;
+  }
 
-  const capture = useCallback(() => {
+  const onCapture = useCallback(() => {
     const shot = webcamRef.current?.getScreenshot();
     if (shot) setSelfie(shot);
-  }, []);
+  }, [setSelfie]);
 
-  const submit = useCallback(async () => {
-    if (!selfie || !claims?.portrait) {
-      setErrorMessage(
-        !claims?.portrait
-          ? 'Missing chip portrait. Restart verification.'
-          : 'Take a selfie first.',
-      );
-      return;
-    }
+  const onSubmit = useCallback(async () => {
+    if (!selfieBase64 || !documentImageBase64) return;
     setBusy(true);
     setErrorMessage(null);
     setStep('faceMatch', 'PROCESSING');
     try {
       const result = await apiPost<FaceMatchResult>('/api/face-match', {
-        sourceImageBase64: selfie,
-        targetImageBase64: claims.portrait,
+        sourceImageBase64: selfieBase64,
+        targetImageBase64: documentImageBase64,
       });
-      setFaceMatch(result);
-      if (result.isMatch) {
+      setFaceMatchResult(result);
+      if (result.similarity >= MATCH_THRESHOLD) {
         setStep('faceMatch', 'SUCCESS');
-      } else if (result.similarity < HARD_FAIL_THRESHOLD) {
-        setStep('faceMatch', 'FAILED');
-        setErrorMessage(
-          `Face match failed (${result.similarity.toFixed(1)}%). Please retry.`,
-        );
       } else {
-        // Borderline — surfaces as a warning the user can retry.
         setStep('faceMatch', 'FAILED');
         setErrorMessage(
-          `Match too low (${result.similarity.toFixed(1)}%, threshold ${result.threshold}%).`,
+          result.similarity < REVIEW_THRESHOLD
+            ? `Face match failed (${result.similarity.toFixed(1)}%). Please retry.`
+            : `Borderline match (${result.similarity.toFixed(1)}%, threshold ${MATCH_THRESHOLD}%). Please retry.`,
         );
       }
     } catch (err) {
       setStep('faceMatch', 'FAILED');
       setErrorMessage(
-        (err as Error).message === 'network_error'
-          ? 'Network error during face match.'
-          : 'Face match failed. Please retry.',
+        ERROR_MESSAGES[(err as Error).message] ?? 'Face match failed.',
       );
     } finally {
       setBusy(false);
     }
-  }, [claims?.portrait, selfie, setFaceMatch, setStep]);
+  }, [
+    documentImageBase64,
+    selfieBase64,
+    setFaceMatchResult,
+    setStep,
+  ]);
 
-  if (!claims) {
-    return <Redirect to="/" />;
-  }
+  const onRetake = useCallback(() => {
+    setSelfie(null);
+    setFaceMatchResult(null);
+    setErrorMessage(null);
+    setStep('faceMatch', 'PENDING');
+  }, [setFaceMatchResult, setSelfie, setStep]);
+
+  const onContinue = useCallback(() => {
+    setCurrentStep('RESULT');
+    navigate('/result');
+  }, [navigate, setCurrentStep]);
 
   return (
     <section style={{ display: 'grid', gap: 18 }}>
@@ -94,9 +121,9 @@ export function FaceMatch() {
             textTransform: 'uppercase',
           }}
         >
-          Step 3 — Face match
+          Step 2 — Selfie
         </p>
-        <h1 style={{ margin: '8px 0 0', fontSize: 24, fontWeight: 700 }}>
+        <h1 style={{ margin: '8px 0 0', fontSize: 26, fontWeight: 700 }}>
           Take a live selfie
         </h1>
         <p
@@ -108,9 +135,8 @@ export function FaceMatch() {
             fontSize: 14,
           }}
         >
-          We compare your selfie against the photo extracted from your
-          document's NFC chip (DG2). Aim for good lighting and look straight
-          into the camera.
+          We compare your selfie against the photo on the document you just
+          scanned. Look straight into the camera and use good lighting.
         </p>
       </header>
 
@@ -125,16 +151,15 @@ export function FaceMatch() {
           style={{
             position: 'relative',
             background: '#000',
-            borderRadius: 12,
+            borderRadius: 14,
             overflow: 'hidden',
             aspectRatio: '3 / 4',
             border: `1px solid ${theme.border}`,
           }}
         >
-          {selfie ? (
-            // eslint-disable-next-line jsx-a11y/img-redundant-alt
+          {selfieBase64 ? (
             <img
-              src={selfie}
+              src={selfieBase64}
               alt="Selfie preview"
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
@@ -148,6 +173,7 @@ export function FaceMatch() {
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           )}
+          {!selfieBase64 && <FaceGuideOverlay />}
           <span
             style={{
               position: 'absolute',
@@ -166,44 +192,38 @@ export function FaceMatch() {
           </span>
         </div>
 
-        {claims.portrait && (
-          <div
+        <div
+          style={{
+            position: 'relative',
+            background: '#000',
+            borderRadius: 14,
+            overflow: 'hidden',
+            aspectRatio: '3 / 4',
+            border: `1px solid ${theme.border}`,
+          }}
+        >
+          <img
+            src={documentImageBase64}
+            alt="Document"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          <span
             style={{
-              position: 'relative',
-              background: '#000',
-              borderRadius: 12,
-              overflow: 'hidden',
-              aspectRatio: '3 / 4',
-              border: `1px solid ${theme.border}`,
+              position: 'absolute',
+              top: 10,
+              left: 10,
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.55)',
+              color: theme.text,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
             }}
           >
-            <img
-              src={
-                claims.portrait.startsWith('data:')
-                  ? claims.portrait
-                  : `data:image/jpeg;base64,${claims.portrait}`
-              }
-              alt="Chip portrait"
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-            <span
-              style={{
-                position: 'absolute',
-                top: 10,
-                left: 10,
-                padding: '4px 8px',
-                borderRadius: 999,
-                background: 'rgba(0,0,0,0.55)',
-                color: theme.text,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-              }}
-            >
-              CHIP PORTRAIT
-            </span>
-          </div>
-        )}
+            DOCUMENT
+          </span>
+        </div>
       </div>
 
       {errorMessage && (
@@ -222,49 +242,45 @@ export function FaceMatch() {
         </div>
       )}
 
-      {faceMatch && (
+      {faceMatchResult && (
         <div
           style={{
             padding: 14,
             borderRadius: 10,
-            border: `1px solid ${faceMatch.isMatch ? theme.success : theme.error}`,
-            background: faceMatch.isMatch
+            border: `1px solid ${faceMatchResult.isMatch ? theme.success : theme.error}`,
+            background: faceMatchResult.isMatch
               ? 'rgba(34,197,94,0.08)'
               : 'rgba(239,68,68,0.08)',
-            color: faceMatch.isMatch ? theme.success : theme.error,
+            color: faceMatchResult.isMatch ? theme.success : theme.error,
             fontSize: 14,
           }}
         >
           <strong style={{ fontWeight: 800 }}>
-            {faceMatch.isMatch ? '✓ MATCH' : '✕ NO MATCH'}
+            {faceMatchResult.isMatch ? '✓ MATCH' : '✕ NO MATCH'}
           </strong>{' '}
-          — similarity {faceMatch.similarity.toFixed(2)}%, confidence{' '}
-          {faceMatch.confidence.toFixed(2)}% (threshold {faceMatch.threshold}%).
+          — similarity {faceMatchResult.similarity.toFixed(2)}%, confidence{' '}
+          {faceMatchResult.confidence.toFixed(2)}% (threshold{' '}
+          {faceMatchResult.threshold}%).
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {!selfie && (
+        {!selfieBase64 && (
           <button
             type="button"
-            onClick={capture}
+            onClick={onCapture}
             disabled={busy}
             style={btnPrimary(busy)}
           >
             <Camera size={16} />
-            Capture selfie
+            Take selfie
           </button>
         )}
-        {selfie && !faceMatch?.isMatch && (
+        {selfieBase64 && !faceMatchResult?.isMatch && (
           <>
             <button
               type="button"
-              onClick={() => {
-                setSelfie(null);
-                setFaceMatch(null);
-                setErrorMessage(null);
-                setStep('faceMatch', 'PENDING');
-              }}
+              onClick={onRetake}
               disabled={busy}
               style={btnSecondary(busy)}
             >
@@ -273,7 +289,7 @@ export function FaceMatch() {
             </button>
             <button
               type="button"
-              onClick={submit}
+              onClick={onSubmit}
               disabled={busy}
               style={btnPrimary(busy)}
             >
@@ -282,16 +298,12 @@ export function FaceMatch() {
               ) : (
                 <Camera size={16} />
               )}
-              {busy ? 'Matching…' : 'Run face match'}
+              {busy ? 'Matching…' : 'Verify'}
             </button>
           </>
         )}
-        {faceMatch?.isMatch && (
-          <button
-            type="button"
-            onClick={() => navigate('/result')}
-            style={btnPrimary(false)}
-          >
+        {faceMatchResult?.isMatch && (
+          <button type="button" onClick={onContinue} style={btnPrimary(false)}>
             Continue
           </button>
         )}
@@ -300,10 +312,43 @@ export function FaceMatch() {
   );
 }
 
-function Redirect({ to }: { to: string }) {
-  const navigate = useNavigate();
-  navigate(to, { replace: true });
-  return null;
+function FaceGuideOverlay() {
+  return (
+    <svg
+      viewBox="0 0 100 133.3"
+      preserveAspectRatio="none"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+      }}
+    >
+      <defs>
+        <mask id="face-cutout">
+          <rect width="100" height="133.3" fill="white" />
+          <ellipse cx="50" cy="60" rx="32" ry="42" fill="black" />
+        </mask>
+      </defs>
+      <rect
+        width="100"
+        height="133.3"
+        fill="rgba(5,12,20,0.5)"
+        mask="url(#face-cutout)"
+      />
+      <ellipse
+        cx="50"
+        cy="60"
+        rx="32"
+        ry="42"
+        fill="none"
+        stroke={theme.accent}
+        strokeWidth="0.5"
+        strokeDasharray="2 2"
+      />
+    </svg>
+  );
 }
 
 function btnPrimary(disabled: boolean): React.CSSProperties {
@@ -318,8 +363,8 @@ function btnPrimary(disabled: boolean): React.CSSProperties {
     padding: '12px 20px',
     fontSize: 14,
     fontWeight: 700,
-    cursor: disabled ? 'progress' : 'pointer',
-    opacity: disabled ? 0.7 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
   };
 }
 
@@ -336,6 +381,6 @@ function btnSecondary(disabled: boolean): React.CSSProperties {
     fontSize: 14,
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.6 : 1,
+    opacity: disabled ? 0.55 : 1,
   };
 }

@@ -11,7 +11,7 @@ import type { Plugin, ViteDevServer } from 'vite';
 import type { ApiHandler } from './api/_helpers';
 
 const ROUTES: Record<string, string> = {
-  '/api/token-exchange': './api/token-exchange.ts',
+  '/api/analyze-mrz': './api/analyze-mrz.ts',
   '/api/face-match': './api/face-match.ts',
 };
 

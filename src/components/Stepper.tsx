@@ -1,6 +1,5 @@
 /**
- * Stepper — visual progress indicator for the 4-step KYC flow.
- * Each pill carries one of: PENDING / PROCESSING / SUCCESS / FAILED.
+ * Stepper — visual progress for the 3-step KYC flow.
  */
 
 import { Check, Loader2, X } from 'lucide-react';
@@ -9,10 +8,9 @@ import { STATUS_COLOR, theme } from '../lib/theme';
 import type { StepStatus, StepperState } from '../types';
 
 const STEPS: { id: keyof StepperState; label: string }[] = [
-  { id: 'start', label: 'eID' },
-  { id: 'callback', label: 'Verified data' },
-  { id: 'faceMatch', label: 'Face match' },
-  { id: 'result', label: 'Register' },
+  { id: 'document', label: 'Document' },
+  { id: 'faceMatch', label: 'Selfie' },
+  { id: 'result', label: 'Verdict' },
 ];
 
 function StatusGlyph({ status }: { status: StepStatus }) {

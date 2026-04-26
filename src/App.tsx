@@ -1,7 +1,5 @@
 /**
- * App shell — routes the 4 verification steps and renders the persistent
- * Stepper at the top. The actual state lives in `useIDVerification`
- * (zustand) so a full-page redirect through Signicat doesn't lose progress.
+ * App shell — routes the 3 verification steps, in-app, no external redirect.
  */
 
 import {
@@ -9,20 +7,17 @@ import {
   Navigate,
   Route,
   Routes,
-  useLocation,
 } from 'react-router-dom';
 
-import { CallbackHandler } from './components/CallbackHandler';
+import { DocumentScanner } from './components/DocumentScanner';
 import { FaceMatch } from './components/FaceMatch';
 import { IDVerificationResult } from './components/IDVerificationResult';
-import { IDVerificationStart } from './components/IDVerificationStart';
 import { Stepper } from './components/Stepper';
 import { theme } from './lib/theme';
 import { useIDVerification } from './hooks/useIDVerification';
 
 function Shell({ children }: { children: React.ReactNode }) {
   const steps = useIDVerification((s) => s.steps);
-  const { pathname } = useLocation();
 
   return (
     <div
@@ -57,7 +52,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <strong style={{ letterSpacing: '0.06em' }}>HCS ID SCANNER</strong>
         </div>
         <span style={{ color: theme.textMuted, fontSize: 12 }}>
-          Signicat eID Hub · AWS Rekognition · HCS-U7
+          MRZ + Face match · 100% in-app · AWS Rekognition
         </span>
       </header>
 
@@ -70,7 +65,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           gap: 24,
         }}
       >
-        {pathname !== '/callback' && <Stepper steps={steps} />}
+        <Stepper steps={steps} />
         {children}
       </main>
     </div>
@@ -82,8 +77,7 @@ export default function App() {
     <BrowserRouter>
       <Shell>
         <Routes>
-          <Route path="/" element={<IDVerificationStart />} />
-          <Route path="/callback" element={<CallbackHandler />} />
+          <Route path="/" element={<DocumentScanner />} />
           <Route path="/face-match" element={<FaceMatch />} />
           <Route path="/result" element={<IDVerificationResult />} />
           <Route path="*" element={<Navigate to="/" replace />} />

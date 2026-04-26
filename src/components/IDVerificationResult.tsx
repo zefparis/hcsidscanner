@@ -1,12 +1,16 @@
 /**
- * Étape 4 — Recap + register the KYC verdict in HCS-U7.
+ * Étape 3 — Recap + register the KYC verdict in HCS-U7.
  *
- * The portrait is *not* sent to HCS-U7. It can optionally be uploaded to
- * Supabase Storage server-side; here we simply forward the structured
- * payload (claims + face-match score) to VITE_HCS_API_URL/api/kyc/register.
+ * KYC composite score:
+ *   mrz_valid * 0.6  +  face_match_similarity / 100 * 0.4
+ *
+ *   mrz_valid = 1.0 if checkDigitsValid && !isExpired, else 0.5.
+ *
+ * The raw document image is *not* sent to HCS-U7 — only the structured
+ * payload (parsed MRZ data + face match score + composite KYC score).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
 import { theme, STATUS_COLOR } from '../lib/theme';
@@ -14,48 +18,58 @@ import { useIDVerification } from '../hooks/useIDVerification';
 import type { KycRegistrationPayload, StepStatus } from '../types';
 
 const HCS_API_URL =
-  import.meta.env.VITE_HCS_API_URL ??
+  import.meta.env.VITE_HCS_API_URL ||
   'https://hcs-u7-backend-kk0n.onrender.com';
 const TENANT_ID =
-  import.meta.env.VITE_HCS_TENANT_ID ?? 'hcs-id-scanner-demo';
+  import.meta.env.VITE_HCS_TENANT_ID || 'hcs-id-scanner-demo';
 
 export function IDVerificationResult() {
-  const { steps, claims, faceMatch, setStep } = useIDVerification();
+  const {
+    steps,
+    documentData,
+    faceMatchResult,
+    setStep,
+    setKycScore,
+  } = useIDVerification();
+
   const [busy, setBusy] = useState(false);
   const [registered, setRegistered] = useState<{
     employeeId?: string;
     error?: string;
   } | null>(null);
 
-  const overallScore = useMemo(() => {
-    if (!claims || !faceMatch) return 0;
-    // Crude composite: 60% Signicat-verified pass + 40% face-match similarity.
-    const signicatPart = 60;
-    const facePart = (faceMatch.similarity / 100) * 40;
-    return Math.round(signicatPart + facePart);
-  }, [claims, faceMatch]);
+  const composite = useMemo(() => {
+    if (!documentData || !faceMatchResult) return 0;
+    const mrzPart =
+      documentData.checkDigitsValid && !documentData.isExpired ? 1.0 : 0.5;
+    const facePart = faceMatchResult.similarity / 100;
+    return Math.round((mrzPart * 0.6 + facePart * 0.4) * 100);
+  }, [documentData, faceMatchResult]);
+
+  // Push the score back into the store so callers can inspect it.
+  useEffect(() => {
+    setKycScore(composite);
+  }, [composite, setKycScore]);
 
   const ready =
-    steps.start === 'SUCCESS' &&
-    steps.callback === 'SUCCESS' &&
+    steps.document === 'SUCCESS' &&
     steps.faceMatch === 'SUCCESS' &&
-    claims &&
-    faceMatch;
+    documentData &&
+    faceMatchResult;
 
   async function register() {
     if (!ready) return;
     setBusy(true);
     setStep('result', 'PROCESSING');
 
-    // Strip the portrait before leaving the device.
+    // Strip the rawMRZ before leaving the device.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { portrait: _portrait, ...claimsForBackend } = claims;
+    const { rawMRZ: _rawMRZ, ...documentForBackend } = documentData;
 
     const payload: KycRegistrationPayload = {
-      claims: claimsForBackend,
-      faceMatchScore: faceMatch.similarity,
-      documentType: claims.document_type,
-      isAuthentic: faceMatch.isMatch,
+      documentData: documentForBackend,
+      faceMatchScore: faceMatchResult.similarity,
+      kycScore: composite,
       timestamp: new Date().toISOString(),
       tenantId: TENANT_ID,
     };
@@ -95,9 +109,9 @@ export function IDVerificationResult() {
             textTransform: 'uppercase',
           }}
         >
-          Step 4 — Register
+          Step 3 — Verdict
         </p>
-        <h1 style={{ margin: '8px 0 0', fontSize: 24, fontWeight: 700 }}>
+        <h1 style={{ margin: '8px 0 0', fontSize: 26, fontWeight: 700 }}>
           KYC verdict
         </h1>
       </header>
@@ -112,8 +126,7 @@ export function IDVerificationResult() {
           border: `1px solid ${theme.border}`,
         }}
       >
-        <RecapRow label="Signicat eID flow" status={steps.callback} />
-        <RecapRow label="Verified data retrieved" status={steps.callback} />
+        <RecapRow label="Document MRZ valid" status={steps.document} />
         <RecapRow label="Live face match" status={steps.faceMatch} />
         <hr
           style={{
@@ -132,10 +145,10 @@ export function IDVerificationResult() {
                 'ui-monospace, SFMono-Regular, Menlo, monospace',
               fontSize: 28,
               fontWeight: 800,
-              color: overallScore >= 90 ? theme.success : theme.warning,
+              color: composite >= 80 ? theme.success : theme.warning,
             }}
           >
-            {overallScore}/100
+            {composite}/100
           </span>
         </div>
       </div>
@@ -197,7 +210,11 @@ export function IDVerificationResult() {
           opacity: !ready || busy ? 0.65 : 1,
         }}
       >
-        {busy ? <Loader2 size={16} className="hcs-spin" /> : <ShieldCheck size={16} />}
+        {busy ? (
+          <Loader2 size={16} className="hcs-spin" />
+        ) : (
+          <ShieldCheck size={16} />
+        )}
         {registered?.employeeId
           ? 'Registered'
           : busy

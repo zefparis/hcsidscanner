@@ -1,194 +1,145 @@
 # HCS ID Scanner
 
-KYC identity verification module — Signicat eID Hub (NFC + MRZ + chip
-crypto) + AWS Rekognition face match. Web app (Vite + React + TS), wrapped
-on Android with Capacitor.
+Open-source KYC identity verification — **no Signicat, no third-party
+identity API**. The whole flow runs in-app:
 
-> Replaces the previous ReadID + AWS Textract `AnalyzeID` pipeline with a
-> single Signicat-driven flow that handles MRZ, NFC ICAO 9303 chip read,
-> and cryptographic verification of the issuing country's signature.
+1. **Document scan** — `react-webcam` capture, MRZ extracted server-side
+   with `mrz-detection` (segmentation + OCR) and parsed with `mrz` (full
+   ICAO check-digit validation).
+2. **Selfie + face match** — `react-webcam` selfie compared with the
+   document recto via **AWS Rekognition CompareFaces** (≈ $0.001 / call).
+3. **Verdict + register** — composite KYC score posted to HCS-U7.
 
-## Architecture
-
-```
-┌──────────────┐  authorize  ┌──────────────────┐  callback  ┌──────────────┐
-│ Start screen │ ──────────▶ │ Signicat hosted  │ ─────────▶ │ Callback     │
-│ (Étape 1)    │             │ MRZ + NFC + sig  │            │ (Étape 2)    │
-└──────────────┘             └──────────────────┘            └──────┬───────┘
-                                                                    │
-                                                                    ▼
-                                                       POST /api/token-exchange
-                                                       (server-only client_secret)
-                                                                    │
-                                                                    ▼
-                                                              SignicatClaims
-                                                                    │
-┌──────────────┐  selfie     ┌──────────────────┐                   │
-│ Face match   │ ──────────▶ │ POST /api/       │                   │
-│ (Étape 3)    │             │ face-match       │ ◀─────────────────┘
-└──────┬───────┘             │ AWS Rekognition  │
-       │                     └──────────────────┘
-       │
-       ▼
-┌──────────────┐
-│ Result       │  POST VITE_HCS_API_URL/api/kyc/register
-│ (Étape 4)    │
-└──────────────┘
-```
+Zero external redirect. Zero paid API except Rekognition.
 
 ## Stack
 
-| Layer            | Choice                                           |
-| ---------------- | ------------------------------------------------ |
-| Framework        | React 19 + Vite 8 + TypeScript                   |
-| State            | zustand (single store: `useIDVerification`)      |
-| Routing          | react-router-dom v7                              |
-| OIDC             | Authorization Code + PKCE (S256), client crafted |
-| Camera           | react-webcam (web) — Capacitor Browser (native)  |
-| Face match       | `@aws-sdk/client-rekognition` CompareFaces       |
-| Native shell     | Capacitor 7 (Android, iOS optional)              |
-| Server-side proxy| Vite middleware (dev) → Vercel functions (prod)  |
+| Layer       | Choice                                              |
+| ----------- | --------------------------------------------------- |
+| Framework   | React 19 + Vite 8 + TypeScript                      |
+| State       | zustand (`useIDVerification`)                       |
+| Routing     | react-router-dom v7                                 |
+| Camera      | react-webcam                                        |
+| MRZ         | `mrz-detection` (image-js + OCR) + `mrz` (parse)    |
+| Face match  | `@aws-sdk/client-rekognition` CompareFaces          |
+| Server code | Vite middleware (dev) → Vercel serverless (prod)    |
 
-## Project layout
+## Layout
 
 ```
 hcs-id-scanner/
 ├─ api/
-│  ├─ _helpers.ts              ← shared http helpers (Vercel-style shape)
-│  ├─ token-exchange.ts        ← POST /api/token-exchange
-│  └─ face-match.ts            ← POST /api/face-match
+│  ├─ _helpers.ts        ← Vercel-style http helpers
+│  ├─ analyze-mrz.ts     ← POST /api/analyze-mrz
+│  └─ face-match.ts      ← POST /api/face-match
 ├─ src/
 │  ├─ components/
-│  │  ├─ IDVerificationStart.tsx
-│  │  ├─ CallbackHandler.tsx
-│  │  ├─ FaceMatch.tsx
-│  │  ├─ IDVerificationResult.tsx
+│  │  ├─ DocumentScanner.tsx     (Étape 1)
+│  │  ├─ FaceMatch.tsx           (Étape 2)
+│  │  ├─ IDVerificationResult.tsx (Étape 3)
 │  │  └─ Stepper.tsx
 │  ├─ hooks/
-│  │  └─ useIDVerification.ts  ← zustand store + apiPost helper
+│  │  └─ useIDVerification.ts    ← zustand store + apiPost
 │  ├─ lib/
-│  │  ├─ signicat.ts           ← OIDC PKCE + authorize URL builder
-│  │  └─ theme.ts              ← HCS-U7 dark theme tokens
-│  ├─ types.ts                 ← shared types (claims, steps, etc.)
-│  ├─ App.tsx                  ← router + shell + stepper
+│  │  └─ theme.ts                ← HCS-U7 dark theme tokens
+│  ├─ App.tsx
 │  └─ main.tsx
-├─ vite-plugin-api.ts          ← dev-only middleware that mounts /api/*
-├─ vite.config.ts
-├─ capacitor.config.ts
-└─ .env.example
+├─ vite-plugin-api.ts            ← mounts /api/* in dev
+└─ vite.config.ts
 ```
 
-## Getting started
+## Environment
 
-### 1. Install
+| Variable                    | Where  | Notes                              |
+| --------------------------- | ------ | ---------------------------------- |
+| `VITE_HCS_API_URL`          | client | HCS-U7 KYC ingestion endpoint      |
+| `VITE_HCS_TENANT_ID`        | client | tenant tag passed in the payload   |
+| `AWS_ACCESS_KEY_ID`         | server | IAM key with Rekognition access    |
+| `AWS_SECRET_ACCESS_KEY`     | server |                                    |
+| `AWS_REGION`                | server | default `eu-west-1`                |
+| `SUPABASE_URL` (opt.)       | server | optional — portrait persistence    |
+| `SUPABASE_SERVICE_ROLE_KEY` | server |                                    |
+| `SUPABASE_BUCKET`           | server | default `kyc-documents`            |
 
-```bash
-npm install
-cp .env.example .env
-# Fill SIGNICAT_CLIENT_SECRET, AWS keys, etc. (see Security below).
-```
-
-### 2. Dev server
-
-```bash
-npm run dev
-# Open http://localhost:5173
-```
-
-The Vite dev server mounts the `api/*` handlers in-process, so the OIDC
-token exchange and the face-match call work end-to-end without a separate
-backend.
-
-### 3. Production build
-
-```bash
-npm run build
-npm run preview
-```
-
-In production the `api/` folder deploys verbatim as Vercel serverless
-functions (or any compatible runtime) — same handler shape.
-
-### 4. Android shell
-
-```bash
-npx cap init "HCS ID Scanner" com.iasolution.hcsidscanner
-npx cap add android
-npx cap sync android
-npx cap open android
-```
-
-After the first `cap add android`, edit
-`android/app/src/main/AndroidManifest.xml` to add:
-
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.NFC" />
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-feature android:name="android.hardware.nfc" android:required="false" />
-```
-
-Set `minSdkVersion 26` in `android/variables.gradle`.
-
-The OIDC flow opens via `@capacitor/browser` (Custom Chrome Tab) — never
-in an in-app WebView (Signicat refuses WebViews).
+See `.env.example`.
 
 ## API contract
 
-### `POST /api/token-exchange`
+### `POST /api/analyze-mrz`
 
-| Field           | Type   | Notes                              |
-| --------------- | ------ | ---------------------------------- |
-| `code`          | string | from the Signicat redirect         |
-| `redirect_uri`  | string | must match the authorize call      |
-| `code_verifier` | string | the PKCE verifier kept client-side |
-
-Returns `{ claims: SignicatClaims }`. The raw `access_token` is **never**
-returned to the client. The whitelist of forwarded claims lives in
-`api/token-exchange.ts → ALLOWED_CLAIM_KEYS`.
+```jsonc
+// request
+{ "imageBase64": "<JPEG, with or without data: prefix>" }
+// 200
+{
+  "firstName": "JEAN",
+  "lastName": "DUPONT",
+  "nationality": "FRA",
+  "dateOfBirth": "1985-04-12",
+  "documentNumber": "12AB34567",
+  "expirationDate": "2030-04-11",
+  "documentType": "P",
+  "issuingCountry": "FRA",
+  "sex": "M",
+  "isExpired": false,
+  "checkDigitsValid": true,
+  "rawMRZ": ["P<FRADUPONT<<JEAN<<<<<<<<<<<<<<<<<<<<<<<<<<<", "12AB345672FRA8504128M3004115<<<<<<<<<<<<<<06"]
+}
+// errors
+{ "error": "no_mrz_found" | "parse_failed" | "invalid_request" }
+```
 
 ### `POST /api/face-match`
 
-| Field                | Type   |
-| -------------------- | ------ |
-| `sourceImageBase64`  | string |
-| `targetImageBase64`  | string |
+```jsonc
+{
+  "sourceImageBase64": "<live selfie JPEG>",
+  "targetImageBase64": "<document recto JPEG>"
+}
+// 200
+{ "similarity": 92.4, "confidence": 99.8, "isMatch": true, "threshold": 80 }
+```
 
-Returns `{ similarity, confidence, isMatch, threshold }`. Threshold is
-hard-coded server-side at 90% (Signicat-grade). The two images are not
-logged anywhere — only the numeric verdict is.
+Threshold = 80 % (selfie vs paper photo, no NFC chip portrait).
+Image bytes are never logged — only numeric verdicts.
 
-## Security
+## KYC composite score
 
-- `SIGNICAT_CLIENT_SECRET` lives **only** as a non-`VITE_*` env var; the
-  Vite bundler refuses to ship it into the client bundle.
-- Token exchange happens server-side; the client only ever receives a
-  curated claims subset.
-- The portrait (chip DG2) is forwarded to Rekognition for the match,
-  then dropped before the HCS-U7 registration call.
-- All Signicat error codes are mapped to generic user-facing messages
-  (no leak of upstream IdP details).
+```
+score = (mrzValid ? 1.0 : 0.5) * 0.6   +   (similarity / 100) * 0.4
+       └────────── 60 % ──────────┘     └──────── 40 % ────────┘
+```
 
-## Environment variables
+Where `mrzValid = checkDigitsValid && !isExpired`. Posted to
+`VITE_HCS_API_URL/api/kyc/register`.
 
-See `.env.example`. The two namespaces:
+## Dev
 
-- `VITE_*` — embedded in the bundle, public.
-- everything else — server-only, available to `api/*` handlers.
+```bash
+npm install
+cp .env.example .env.local        # fill AWS keys
+npm run dev                        # http://localhost:5173
+```
 
-## Verification flow — error handling
+The dev server mounts `api/*` handlers in-process via `vite-plugin-api.ts`,
+so MRZ analysis and face matching work end-to-end without a separate
+backend.
 
-| Situation                  | Behaviour                              |
-| -------------------------- | -------------------------------------- |
-| User cancels on Signicat   | redirect `?error=…` → back to Étape 1  |
-| Document expired           | Signicat refuses; we surface the error |
-| Face match < 90%, ≥ 70%    | retry allowed, soft warning            |
-| Face match < 70%           | hard fail, must restart                |
-| NFC unsupported on device  | Signicat falls back to OCR             |
-| Network error              | retry button on each step              |
+## Production
+
+`npm run build` — `dist/` is the static site, `api/*.ts` are picked up
+verbatim by Vercel as serverless functions. Same handlers in dev and prod.
+
+## Privacy notes
+
+- Document image and selfie never leave the function memory.
+- Only structured fields + numeric scores are logged.
+- The `rawMRZ` array is stripped before forwarding the payload to HCS-U7.
+- Document numbers are subject to GDPR — make sure your HCS-U7 tenant
+  has a documented retention policy.
 
 ## Patents / origin
 
-Cognitive engine: HCS-U7 (FR2514274 + FR2514546).
-This module is the KYC front-door for HV-GUARD's identity-bound flows
-(WorkGuard enrolment, PayGuard onboarding, etc.).
+Cognitive engine: HCS-U7 (FR2514274 + FR2514546). This module is the
+KYC front-door for HV-GUARD's identity-bound flows (WorkGuard
+enrolment, PayGuard onboarding, etc.).

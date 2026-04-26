@@ -27,7 +27,7 @@ interface FaceMatchBody {
   targetImageBase64?: string;
 }
 
-const MATCH_THRESHOLD = 90;
+const MATCH_THRESHOLD = 80;
 
 function decodeBase64(input: string): Uint8Array {
   const stripped = input.includes(',') ? input.split(',', 2)[1] : input;
