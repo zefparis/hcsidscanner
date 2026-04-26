@@ -10,24 +10,9 @@
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 
-import { buildAuthorizeUrl } from '../lib/signicat';
+import { startAuth } from '../lib/signicat';
 import { theme } from '../lib/theme';
 import { useIDVerification } from '../hooks/useIDVerification';
-
-async function navigateToAuthorizeUrl(url: string): Promise<void> {
-  // Lazy-load Capacitor only when running on a native shell.
-  try {
-    const { Capacitor } = await import('@capacitor/core');
-    if (Capacitor.isNativePlatform()) {
-      const { Browser } = await import('@capacitor/browser');
-      await Browser.open({ url });
-      return;
-    }
-  } catch {
-    // Capacitor not available — fall through to plain web redirect.
-  }
-  window.location.href = url;
-}
 
 export function IDVerificationStart() {
   const [busy, setBusy] = useState(false);
@@ -38,8 +23,10 @@ export function IDVerificationStart() {
     setError(null);
     setStep('start', 'PROCESSING');
     try {
-      const url = await buildAuthorizeUrl();
-      await navigateToAuthorizeUrl(url);
+      // Top-level navigation (or Capacitor Browser on native). Signicat
+      // blocks iframe embedding (X-Frame-Options / frame-ancestors), so a
+      // full-page redirect is the only reliable approach on web.
+      await startAuth();
       // Browser leaves the page from here on web; native users return
       // through the deep-link handler set up in CallbackHandler.
     } catch {

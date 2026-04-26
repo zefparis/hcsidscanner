@@ -85,3 +85,34 @@ export function consumeExpectedState(): string | null {
   sessionStorage.removeItem(STORAGE_KEY_STATE);
   return s;
 }
+
+/**
+ * Launch the Signicat OIDC flow.
+ *
+ * Must be a **top-level** navigation — Signicat sends
+ * `X-Frame-Options: DENY` / `Content-Security-Policy: frame-ancestors 'none'`,
+ * so iframes and sandboxed popups are blocked. We therefore use:
+ *   - `window.location.href` on web (full page redirect)
+ *   - Capacitor `Browser.open` on native (opens a Custom Chrome Tab /
+ *     SFSafariViewController — not an in-app WebView)
+ *
+ * Never use `window.open`, `<iframe src>`, or `fetch` here.
+ */
+export async function startAuth(): Promise<void> {
+  const url = await buildAuthorizeUrl();
+
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.open({ url });
+      return;
+    }
+  } catch {
+    // Capacitor unavailable (pure web) — fall through to top-level redirect.
+  }
+
+  // Top-level navigation. This is the only safe way on web because
+  // Signicat refuses to render inside any iframe.
+  window.location.href = url;
+}
