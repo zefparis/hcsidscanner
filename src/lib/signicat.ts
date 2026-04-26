@@ -6,15 +6,17 @@
  * builds the authorize URL and PKCE verifier/challenge.
  */
 
+// Use `||` not `??` so empty strings (e.g. VITE_SIGNICAT_BASE_URL=) also
+// fall back to the tenant defaults — common pitfall when copy-pasting envs.
 const baseUrl =
-  import.meta.env.VITE_SIGNICAT_BASE_URL ??
+  import.meta.env.VITE_SIGNICAT_BASE_URL ||
   'https://ia-solution.sandbox.signicat.com';
 const clientId =
-  import.meta.env.VITE_SIGNICAT_CLIENT_ID ?? 'sandbox-spicy-picture-960';
+  import.meta.env.VITE_SIGNICAT_CLIENT_ID || 'sandbox-spicy-picture-960';
 const scope =
-  import.meta.env.VITE_SIGNICAT_SCOPE ?? 'openid profile document';
+  import.meta.env.VITE_SIGNICAT_SCOPE || 'openid profile document';
 const redirectUri =
-  import.meta.env.VITE_REDIRECT_URI ?? `${window.location.origin}/callback`;
+  import.meta.env.VITE_REDIRECT_URI || `${window.location.origin}/callback`;
 
 export const SIGNICAT = {
   baseUrl,
