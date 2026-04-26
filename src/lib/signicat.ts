@@ -71,6 +71,10 @@ export async function buildAuthorizeUrl(): Promise<string> {
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
+    // Sandbox eID flow — select Signicat's simulator IdP. Replace with the
+    // real ACR (e.g. `idp:nbid-oidc`, `idp:ftn-op-auth`, `idp:itsme`, …)
+    // once moving to a production tenant.
+    acr_values: 'idp:simulator',
   });
 
   return `${SIGNICAT.authorizeEndpoint}?${params.toString()}`;
