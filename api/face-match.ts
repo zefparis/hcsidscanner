@@ -20,7 +20,7 @@ import {
   sendJson,
   withErrorBoundary,
   type ApiHandler,
-} from './_helpers';
+} from './_helpers.js';
 
 interface FaceMatchBody {
   sourceImageBase64?: string;

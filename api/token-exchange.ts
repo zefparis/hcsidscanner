@@ -12,14 +12,14 @@
  * 4xx:  { error: 'invalid_request' | 'token_exchange_failed' | 'userinfo_failed' }
  */
 
-import type { SignicatClaims } from '../src/types';
+import type { SignicatClaims } from '../src/types.js';
 import {
   HttpError,
   readJson,
   sendJson,
   withErrorBoundary,
   type ApiHandler,
-} from './_helpers';
+} from './_helpers.js';
 
 interface ExchangeBody {
   code?: string;
@@ -33,7 +33,7 @@ interface TokenResponse {
   token_type: string;
 }
 
-const ALLOWED_CLAIM_KEYS: (keyof SignicatClaims)[] = [
+const ALLOWED_CLAIM_KEYS: readonly string[] = [
   'sub',
   'given_name',
   'family_name',
