@@ -7,7 +7,8 @@
  */
 
 const baseUrl =
-  import.meta.env.VITE_SIGNICAT_BASE_URL ?? 'https://sandbox.signicat.com';
+  import.meta.env.VITE_SIGNICAT_BASE_URL ??
+  'https://ia-solution.sandbox.signicat.com';
 const clientId =
   import.meta.env.VITE_SIGNICAT_CLIENT_ID ?? 'sandbox-spicy-picture-960';
 const scope =

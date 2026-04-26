@@ -67,7 +67,8 @@ const handler: ApiHandler = async (req, res) => {
   }
 
   const baseUrl =
-    process.env.SIGNICAT_BASE_URL ?? 'https://sandbox.signicat.com';
+    process.env.SIGNICAT_BASE_URL ??
+    'https://ia-solution.sandbox.signicat.com';
   const clientId = process.env.SIGNICAT_CLIENT_ID;
   const clientSecret = process.env.SIGNICAT_CLIENT_SECRET;
 
