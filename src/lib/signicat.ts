@@ -12,9 +12,9 @@ const baseUrl =
   import.meta.env.VITE_SIGNICAT_BASE_URL ||
   'https://ia-solution.sandbox.signicat.com';
 const clientId =
-  import.meta.env.VITE_SIGNICAT_CLIENT_ID || 'sandbox-spicy-picture-960';
+  import.meta.env.VITE_SIGNICAT_CLIENT_ID || 'sandbox-little-goat-157';
 const scope =
-  import.meta.env.VITE_SIGNICAT_SCOPE || 'openid profile document';
+  import.meta.env.VITE_SIGNICAT_SCOPE || 'openid profile';
 const redirectUri =
   import.meta.env.VITE_REDIRECT_URI || `${window.location.origin}/callback`;
 
