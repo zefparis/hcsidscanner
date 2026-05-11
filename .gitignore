@@ -50,3 +50,5 @@ ios/
 # Build & cache
 .vercel
 .turbo
+.idea/
+*.iml

@@ -4,6 +4,10 @@ plugins {
   id("com.facebook.react")
 }
 
+project.ext.react = [
+  enableHermes: false
+]
+
 react {
   root = file("../..")
   reactNativeDir = file("../../node_modules/react-native")
@@ -45,5 +49,10 @@ android {
 
 dependencies {
   implementation("com.facebook.react:react-android")
-  implementation("com.facebook.react:hermes-android")
+
+  if (hermesEnabled.toBoolean()) {
+    implementation("com.facebook.react:hermes-android")
+  } else {
+    implementation("org.webkit:android-jsc:+")
+  }
 }

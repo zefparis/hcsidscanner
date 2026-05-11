@@ -3,3 +3,10 @@ plugins {
   id("org.jetbrains.kotlin.android") version "1.9.24" apply false
   id("com.facebook.react") version "0.76.9" apply false
 }
+
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+  }
+}
