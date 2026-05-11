@@ -37,12 +37,15 @@ export function FaceMatch() {
   const {
     documentImageBase64,
     selfieBase64,
+    apiToken,
     setSelfie,
     faceMatchResult,
     setFaceMatchResult,
     setStep,
     setCurrentStep,
   } = useIDVerification();
+
+  const authHeaders = apiToken ? { 'x-api-key': apiToken } : undefined;
 
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -64,10 +67,12 @@ export function FaceMatch() {
     setErrorMessage(null);
     setStep('faceMatch', 'PROCESSING');
     try {
-      const result = await apiPost<FaceMatchResult>('/api/face-match', {
-        sourceImageBase64: selfieBase64,
-        targetImageBase64: documentImageBase64,
-      });
+      const result = await apiPost<FaceMatchResult>(
+        '/api/face-match',
+        { sourceImageBase64: selfieBase64, targetImageBase64: documentImageBase64 },
+        undefined,
+        authHeaders,
+      );
       setFaceMatchResult(result);
       if (result.similarity >= MATCH_THRESHOLD) {
         setStep('faceMatch', 'SUCCESS');
@@ -88,6 +93,7 @@ export function FaceMatch() {
       setBusy(false);
     }
   }, [
+    authHeaders,
     documentImageBase64,
     selfieBase64,
     setFaceMatchResult,

@@ -76,3 +76,100 @@ export function withErrorBoundary(handler: ApiHandler): ApiHandler {
     }
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Security middleware
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Maximum request body size in bytes (10 MB — base64 images are large). */
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+/** Rate limit: max requests per IP within a sliding window. */
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 30;
+const hits = new Map<string, number[]>();
+
+function clientIp(req: ApiRequest): string {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string') return fwd.split(',')[0].trim();
+  return req.socket?.remoteAddress ?? 'unknown';
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const list = (hits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  list.push(now);
+  hits.set(ip, list);
+  return list.length > RATE_MAX;
+}
+
+/** Set CORS headers. Returns false (and ends the response) for blocked origins / preflight. */
+function applyCors(req: ApiRequest, res: ApiResponse): boolean {
+  const allowed = process.env.CORS_ALLOWED_ORIGIN ?? '';
+  const origin = (req.headers.origin ?? '') as string;
+
+  if (allowed && origin && origin !== allowed) {
+    sendJson(res, 403, { error: 'forbidden_origin' });
+    return false;
+  }
+
+  const effectiveOrigin = allowed || origin || '*';
+  res.setHeader('access-control-allow-origin', effectiveOrigin);
+  res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+  res.setHeader('access-control-allow-headers', 'content-type, x-api-key');
+  res.setHeader('access-control-max-age', '86400');
+  res.setHeader('vary', 'Origin');
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return false;
+  }
+  return true;
+}
+
+/** Check the x-api-key header. Skipped when API_SECRET is not configured. */
+function checkApiKey(req: ApiRequest): boolean {
+  const secret = process.env.API_SECRET;
+  if (!secret) return true;
+  return req.headers['x-api-key'] === secret;
+}
+
+/** Check Content-Length against MAX_BODY_BYTES. */
+function checkBodySize(req: ApiRequest): boolean {
+  const cl = req.headers['content-length'];
+  if (cl && parseInt(cl, 10) > MAX_BODY_BYTES) return false;
+  return true;
+}
+
+/**
+ * Composable security wrapper: CORS → body limit → rate limit → auth → handler.
+ * Wraps everything inside `withErrorBoundary`.
+ *
+ * NOTE: the in-memory rate limiter resets on each cold start (Vercel serverless).
+ * For production use, consider Vercel WAF or an external rate-limit store.
+ */
+export function withSecurity(handler: ApiHandler): ApiHandler {
+  return withErrorBoundary(async (req, res) => {
+    if (!applyCors(req, res)) return;
+
+    if (!checkBodySize(req)) {
+      sendJson(res, 413, { error: 'payload_too_large' });
+      return;
+    }
+
+    const ip = clientIp(req);
+    if (isRateLimited(ip)) {
+      res.setHeader('retry-after', '60');
+      sendJson(res, 429, { error: 'rate_limited' });
+      return;
+    }
+
+    if (!checkApiKey(req)) {
+      sendJson(res, 401, { error: 'unauthorized' });
+      return;
+    }
+
+    await handler(req, res);
+  });
+}

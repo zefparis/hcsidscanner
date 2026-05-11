@@ -41,12 +41,15 @@ export function DocumentScanner() {
 
   const {
     documentData,
+    apiToken,
     setDocumentData,
     setDocumentImage,
     setStep,
     setCurrentStep,
     reset,
   } = useIDVerification();
+
+  const authHeaders = apiToken ? { 'x-api-key': apiToken } : undefined;
 
   const [state, setState] = useState<ScannerState>('IDLE');
   const [capture, setCapture] = useState<string | null>(null);
@@ -66,9 +69,12 @@ export function DocumentScanner() {
     setStep('document', 'PROCESSING');
     setErrorMessage(null);
     try {
-      const data = await apiPost<DocumentData>('/api/analyze-mrz', {
-        imageBase64: capture,
-      });
+      const data = await apiPost<DocumentData>(
+        '/api/analyze-mrz',
+        { imageBase64: capture },
+        undefined,
+        authHeaders,
+      );
       setDocumentData(data);
       setDocumentImage(capture);
       if (!data.checkDigitsValid || data.isExpired) {
@@ -83,7 +89,7 @@ export function DocumentScanner() {
       setStep('document', 'FAILED');
       setState('ERROR');
     }
-  }, [capture, setDocumentData, setDocumentImage, setStep]);
+  }, [capture, setDocumentData, setDocumentImage, setStep, authHeaders]);
 
   const onRetake = useCallback(() => {
     setCapture(null);

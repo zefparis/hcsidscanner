@@ -25,20 +25,22 @@ interface KycRegistrationPayload {
   tenantId: string;
 }
 
-const HCS_API_URL =
-  import.meta.env.VITE_HCS_API_URL ||
-  'https://hcs-u7-backend-kk0n.onrender.com';
-const TENANT_ID =
-  import.meta.env.VITE_HCS_TENANT_ID || 'hcs-id-scanner-demo';
+const HCS_API_URL_FALLBACK = 'https://hcs-u7-backend-kk0n.onrender.com';
+const TENANT_ID_FALLBACK = 'hcs-id-scanner-demo';
 
 export function IDVerificationResult() {
   const {
     steps,
     documentData,
     faceMatchResult,
+    hcsApiUrl,
+    tenantId,
     setStep,
     setKycScore,
   } = useIDVerification();
+
+  const effectiveApiUrl = hcsApiUrl || HCS_API_URL_FALLBACK;
+  const effectiveTenantId = tenantId || TENANT_ID_FALLBACK;
 
   const [busy, setBusy] = useState(false);
   const [registered, setRegistered] = useState<{
@@ -51,7 +53,7 @@ export function IDVerificationResult() {
     const mrzPart =
       documentData.checkDigitsValid && !documentData.isExpired ? 1.0 : 0.5;
     const facePart = faceMatchResult.similarity / 100;
-    return Math.round((mrzPart * 0.6 + facePart * 0.4) * 100);
+    return Math.round((mrzPart * 0.6 + facePart * 0.4) * 100) / 100;
   }, [documentData, faceMatchResult]);
 
   // Push the score back into the store so callers can inspect it.
@@ -79,11 +81,11 @@ export function IDVerificationResult() {
       faceMatchScore: faceMatchResult.similarity,
       kycScore: composite,
       timestamp: new Date().toISOString(),
-      tenantId: TENANT_ID,
+      tenantId: effectiveTenantId,
     };
 
     try {
-      const res = await fetch(`${HCS_API_URL}/api/kyc/register`, {
+      const res = await fetch(`${effectiveApiUrl}/api/kyc/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
@@ -153,10 +155,10 @@ export function IDVerificationResult() {
                 'ui-monospace, SFMono-Regular, Menlo, monospace',
               fontSize: 28,
               fontWeight: 800,
-              color: composite >= 80 ? theme.success : theme.warning,
+              color: composite >= 0.8 ? theme.success : theme.warning,
             }}
           >
-            {composite}/100
+            {Math.round(composite * 100)}/100
           </span>
         </div>
       </div>

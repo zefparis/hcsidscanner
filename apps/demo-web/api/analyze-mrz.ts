@@ -16,7 +16,7 @@ import {
   HttpError,
   readJson,
   sendJson,
-  withErrorBoundary,
+  withSecurity,
   type ApiHandler,
 } from './_helpers.js';
 
@@ -49,4 +49,4 @@ const handler: ApiHandler = async (req, res) => {
   }
 };
 
-export default withErrorBoundary(handler);
+export default withSecurity(handler);

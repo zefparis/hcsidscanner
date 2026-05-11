@@ -16,6 +16,9 @@ import {
 
 const TENANT_ID =
   import.meta.env.VITE_HCS_TENANT_ID || 'hcs-id-scanner-demo';
+const HCS_API_URL =
+  import.meta.env.VITE_HCS_API_URL || 'https://hcs-u7-backend-kk0n.onrender.com';
+const API_TOKEN = import.meta.env.VITE_API_TOKEN || '';
 
 export default function App() {
   const [verdict, setVerdict] = useState<IDVerificationResultData | null>(null);
@@ -70,8 +73,10 @@ export default function App() {
         <IDVerificationFlow
           config={{
             tenantId: TENANT_ID,
+            hcsApiUrl: HCS_API_URL,
             minFaceMatchScore: 80,
             requireFaceMatch: true,
+            apiToken: API_TOKEN || undefined,
           }}
           onComplete={(result) => {
             // Real consumers would `await registerKyc(result)` here.

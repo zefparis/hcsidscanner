@@ -59,7 +59,17 @@ export function IDVerificationFlow({
     faceMatchResult,
     errorMessage,
     kycScore,
+    setConfig,
   } = useIDVerification();
+
+  // Sync config values into the store so child components can read them.
+  useEffect(() => {
+    setConfig({
+      hcsApiUrl: config.hcsApiUrl,
+      tenantId: config.tenantId,
+      apiToken: config.apiToken,
+    });
+  }, [config.hcsApiUrl, config.tenantId, config.apiToken, setConfig]);
 
   // Surface terminal errors to the parent.
   useEffect(() => {

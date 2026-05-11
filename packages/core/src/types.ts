@@ -83,6 +83,8 @@ export interface IDScannerConfig {
   tenantId: string;
   /** Optional pre-existing employee id — emitted in the registration payload. */
   employeeId?: string;
+  /** Optional API token sent as `x-api-key` header to the backend endpoints. */
+  apiToken?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

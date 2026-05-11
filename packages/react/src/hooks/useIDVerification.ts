@@ -28,6 +28,13 @@ interface IDVerificationState {
   faceMatchResult: FaceMatchResult | null;
   kycScore: number | null;
 
+  /** HCS-U7 base URL — propagated from IDScannerConfig. */
+  hcsApiUrl: string;
+  /** Tenant ID — propagated from IDScannerConfig. */
+  tenantId: string;
+  /** API token sent as x-api-key header. */
+  apiToken: string;
+
   errorMessage: string | null;
 
   // ── actions ──────────────────────────────────────────────────────────
@@ -38,6 +45,7 @@ interface IDVerificationState {
   setSelfie: (img: string | null) => void;
   setFaceMatchResult: (r: FaceMatchResult | null) => void;
   setKycScore: (score: number | null) => void;
+  setConfig: (cfg: { hcsApiUrl?: string; tenantId?: string; apiToken?: string }) => void;
   setError: (msg: string | null) => void;
   reset: () => void;
 }
@@ -56,6 +64,9 @@ export const useIDVerification = create<IDVerificationState>((set) => ({
   selfieBase64: null,
   faceMatchResult: null,
   kycScore: null,
+  hcsApiUrl: '',
+  tenantId: '',
+  apiToken: '',
   errorMessage: null,
 
   setStep: (id, status) =>
@@ -66,6 +77,12 @@ export const useIDVerification = create<IDVerificationState>((set) => ({
   setSelfie: (selfieBase64) => set({ selfieBase64 }),
   setFaceMatchResult: (faceMatchResult) => set({ faceMatchResult }),
   setKycScore: (kycScore) => set({ kycScore }),
+  setConfig: (cfg) =>
+    set((s) => ({
+      hcsApiUrl: cfg.hcsApiUrl ?? s.hcsApiUrl,
+      tenantId: cfg.tenantId ?? s.tenantId,
+      apiToken: cfg.apiToken ?? s.apiToken,
+    })),
   setError: (errorMessage) => set({ errorMessage }),
   reset: () =>
     set({
@@ -76,6 +93,7 @@ export const useIDVerification = create<IDVerificationState>((set) => ({
       selfieBase64: null,
       faceMatchResult: null,
       kycScore: null,
+      // hcsApiUrl, tenantId, apiToken intentionally kept across reset
       errorMessage: null,
     }),
 }));
@@ -88,12 +106,13 @@ export async function apiPost<T>(
   url: string,
   body: unknown,
   signal?: AbortSignal,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...extraHeaders },
       body: JSON.stringify(body),
       signal,
     });
