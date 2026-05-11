@@ -66,13 +66,20 @@ export function withErrorBoundary(handler: ApiHandler): ApiHandler {
       await handler(req, res);
     } catch (err) {
       if (err instanceof HttpError) {
-        sendJson(res, err.status, { error: err.code });
+        sendJson(res, err.status, {
+          error: err.code,
+          message: err.code,
+        });
         return;
       }
-      // Never echo back internal error details.
       // eslint-disable-next-line no-console
-      console.error('[api]', (err as Error).message);
-      sendJson(res, 500, { error: 'internal_error' });
+      console.error('[api]', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      sendJson(res, 500, {
+        error: 'internal_error',
+        message: 'Unexpected API error',
+      });
     }
   };
 }
@@ -109,7 +116,10 @@ function applyCors(req: ApiRequest, res: ApiResponse): boolean {
   const origin = (req.headers.origin ?? '') as string;
 
   if (allowed && origin && origin !== allowed) {
-    sendJson(res, 403, { error: 'forbidden_origin' });
+    sendJson(res, 403, {
+      error: 'forbidden_origin',
+      message: 'Origin is not allowed.',
+    });
     return false;
   }
 
@@ -154,19 +164,28 @@ export function withSecurity(handler: ApiHandler): ApiHandler {
     if (!applyCors(req, res)) return;
 
     if (!checkBodySize(req)) {
-      sendJson(res, 413, { error: 'payload_too_large' });
+      sendJson(res, 413, {
+        error: 'payload_too_large',
+        message: 'Request payload is too large.',
+      });
       return;
     }
 
     const ip = clientIp(req);
     if (isRateLimited(ip)) {
       res.setHeader('retry-after', '60');
-      sendJson(res, 429, { error: 'rate_limited' });
+      sendJson(res, 429, {
+        error: 'rate_limited',
+        message: 'Too many requests. Retry later.',
+      });
       return;
     }
 
     if (!checkApiKey(req)) {
-      sendJson(res, 401, { error: 'unauthorized' });
+      sendJson(res, 401, {
+        error: 'unauthorized',
+        message: 'Missing or invalid API key.',
+      });
       return;
     }
 

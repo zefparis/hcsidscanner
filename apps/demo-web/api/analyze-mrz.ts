@@ -10,14 +10,16 @@
  * 4xx  : { error, message }
  */
 
-import { analyzeMRZ, MRZError } from '@hcs/id-scanner-core';
-
 import {
   readJson,
   sendJson,
   withSecurity,
   type ApiHandler,
 } from './_helpers.js';
+
+export const config = {
+  runtime: 'nodejs',
+};
 
 // ── Robust payload extraction ────────────────────────────────────────────
 
@@ -52,6 +54,14 @@ const ERROR_DETAIL: Record<string, string> = {
     'MRZ processing engine failed to load. Contact support.',
 };
 
+function mrzErrorCode(err: unknown): string | null {
+  if (err instanceof Error && 'code' in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === 'string' ? code : null;
+  }
+  return null;
+}
+
 // ── Handler ──────────────────────────────────────────────────────────────
 
 const handler: ApiHandler = async (req, res) => {
@@ -65,16 +75,19 @@ const handler: ApiHandler = async (req, res) => {
 
   const body = await readJson<Record<string, unknown>>(req);
 
-  // Debug logs (remove in production)
-  // eslint-disable-next-line no-console
-  console.log('[analyze-mrz] body keys:', Object.keys(body));
-  // eslint-disable-next-line no-console
-  console.log('[analyze-mrz] content-type:', req.headers['content-type']);
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] body keys:', Object.keys(body));
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] content-type:', req.headers['content-type']);
+  }
 
   const imageBase64 = getBase64FromBody(body);
 
-  // eslint-disable-next-line no-console
-  console.log('[analyze-mrz] image length:', imageBase64?.length ?? 0);
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] image length:', imageBase64?.length ?? 0);
+  }
 
   if (!imageBase64) {
     sendJson(res, 422, {
@@ -86,28 +99,31 @@ const handler: ApiHandler = async (req, res) => {
   }
 
   try {
-    const documentData = await analyzeMRZ(imageBase64);
+    const core = await import('@hcs/id-scanner-core');
+    const documentData = await core.analyzeMRZ(imageBase64);
     sendJson(res, 200, documentData);
   } catch (err) {
-    if (err instanceof MRZError) {
+    const code = mrzErrorCode(err);
+    if (code) {
       const status =
-        err.code === 'engine_unavailable'
+        code === 'engine_unavailable'
           ? 500
-          : err.code === 'invalid_input'
+          : code === 'invalid_input'
             ? 400
             : 422;
       sendJson(res, status, {
-        error: err.code === 'no_mrz_found' ? 'MRZ_NOT_DETECTED' : err.code,
-        message: ERROR_DETAIL[err.code] ?? 'Unknown MRZ error.',
+        error: code === 'no_mrz_found' ? 'MRZ_NOT_DETECTED' : code,
+        message: ERROR_DETAIL[code] ?? 'Unknown MRZ error.',
       });
       return;
     }
-    // Unexpected error — don't leak internals.
     // eslint-disable-next-line no-console
-    console.error('[analyze-mrz] unexpected:', (err as Error).message);
+    console.error('[analyze-mrz]', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     sendJson(res, 500, {
-      error: 'internal_error',
-      message: 'An unexpected error occurred during MRZ analysis.',
+      error: 'engine_unavailable',
+      message: 'MRZ processing engine failed on server',
     });
   }
 };

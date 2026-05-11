@@ -26,8 +26,8 @@ const MIN_BRIGHTNESS = 40; // below this → "Luminosité insuffisante"
 const MIN_SHARPNESS = 50; // below this → "Document trop flou"
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 480;
-const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
-const MAX_DIMENSION = 1600;
+const MAX_PAYLOAD_BYTES = 4 * 1024 * 1024; // 4 MB
+const MAX_DIMENSION = 1280;
 const COMPRESS_QUALITY = 0.85;
 
 // ─── Capture helpers ─────────────────────────────────────────────────────────
