@@ -107,9 +107,11 @@ export function DocumentScanner() {
   const [debugInfo, setDebugInfo] = useState<QualityReport | null>(null);
   const [analyzeStartTime, setAnalyzeStartTime] = useState<number>(0);
 
-  // Prevent body scroll on mobile while in capture mode
+  // Lock body scroll only during the brief stabilization capture
+  // (prevents accidental scroll while multi-frame capture runs).
+  // NEVER lock during IDLE — the user needs to scroll to reach buttons.
   useEffect(() => {
-    if (state === 'IDLE' || state === 'STABILIZING') {
+    if (state === 'STABILIZING') {
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
@@ -344,7 +346,7 @@ function CameraStage({
 }: CameraStageProps) {
   const busy = state === 'ANALYZING' || state === 'STABILIZING';
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
+    <div style={{ display: 'grid', gap: 14, paddingBottom: 96 }}>
       {/* Camera / preview container — prevent pinch-zoom on mobile */}
       <div
         style={{
@@ -379,7 +381,7 @@ function CameraStage({
         {/* Guide overlay — only when live */}
         {!capture && <MrzGuideOverlay />}
 
-        {/* Stabilizing indicator */}
+        {/* Stabilizing indicator — pointerEvents:none so it never blocks */}
         {state === 'STABILIZING' && (
           <div
             style={{
@@ -391,6 +393,7 @@ function CameraStage({
               color: theme.text,
               fontSize: 14,
               gap: 8,
+              pointerEvents: 'none',
             }}
           >
             <Loader2 size={24} className="hcs-spin" />
@@ -398,7 +401,7 @@ function CameraStage({
           </div>
         )}
 
-        {/* Analyzing overlay */}
+        {/* Analyzing overlay — pointerEvents:none so it never blocks */}
         {capture && state === 'ANALYZING' && (
           <div
             style={{
@@ -411,6 +414,7 @@ function CameraStage({
               color: theme.text,
               fontSize: 14,
               gap: 10,
+              pointerEvents: 'none',
             }}
           >
             <Loader2 size={28} className="hcs-spin" />
@@ -474,13 +478,19 @@ function CameraStage({
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions — sticky so always reachable even on small viewports */}
       <div
         style={{
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 50,
           display: 'flex',
           gap: 10,
           flexWrap: 'wrap',
           justifyContent: 'center',
+          padding: '12px 0',
+          background: theme.bg,
+          pointerEvents: 'auto',
         }}
       >
         {!capture && (
