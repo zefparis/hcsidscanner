@@ -8,9 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@hcs/id-scanner-demo-web",
-    "build": "npm run build --workspace=@hcs/id-scanner-demo-web",
+    "build": "npm run build --workspace=@hcs/id-scanner-core && npm run build --workspace=@hcs/id-scanner-demo-web",
     "build:demo": "npm run build --workspace=@hcs/id-scanner-demo-web",
-    "type-check": "tsc -p packages/core/tsconfig.json && tsc -p packages/react/tsconfig.json && tsc -p packages/native/tsconfig.json && tsc -b apps/demo-web"
+    "type-check": "npm run build --workspace=@hcs/id-scanner-core && tsc -p packages/react/tsconfig.json && tsc -p packages/native/tsconfig.json && tsc -b apps/demo-web && tsc -p apps/api/tsconfig.json --noEmit"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

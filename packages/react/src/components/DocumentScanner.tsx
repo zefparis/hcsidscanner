@@ -91,6 +91,7 @@ export function DocumentScanner() {
 
   const {
     documentData,
+    hcsApiUrl,
     apiToken,
     setDocumentData,
     setDocumentImage,
@@ -194,8 +195,11 @@ export function DocumentScanner() {
     setAnalyzeStartTime(Date.now());
 
     try {
+      const analyzeUrl = hcsApiUrl
+        ? `${hcsApiUrl.replace(/\/$/, '')}/api/analyze-mrz`
+        : '/api/analyze-mrz';
       const data = await apiPost<DocumentData>(
-        '/api/analyze-mrz',
+        analyzeUrl,
         { imageBase64: capture },
         undefined,
         authHeaders,
@@ -226,7 +230,7 @@ export function DocumentScanner() {
       setStep('document', 'FAILED');
       setState('ERROR');
     }
-  }, [capture, setDocumentData, setDocumentImage, setStep, authHeaders, analyzeStartTime]);
+  }, [capture, hcsApiUrl, setDocumentData, setDocumentImage, setStep, authHeaders, analyzeStartTime]);
 
   // ─── Retake ────────────────────────────────────────────────────────────
 
