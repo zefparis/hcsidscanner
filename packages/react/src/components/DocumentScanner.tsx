@@ -40,6 +40,7 @@ import {
   loadFileAsDataUrl,
   type QualityReport,
 } from '../lib/capture-utils';
+import { isDocumentUsableForSelfie } from '../lib/document-validation';
 import type { DocumentData } from '@hcs/id-scanner-core';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -198,10 +199,12 @@ export function DocumentScanner() {
       const analyzeUrl = hcsApiUrl
         ? `${hcsApiUrl.replace(/\/$/, '')}/api/analyze-mrz`
         : '/api/analyze-mrz';
-      // eslint-disable-next-line no-console
-      console.log('[DocumentScanner] api url', analyzeUrl);
-      // eslint-disable-next-line no-console
-      console.log('[DocumentScanner] has api token', Boolean(apiToken));
+      if (IS_DEV) {
+        // eslint-disable-next-line no-console
+        console.log('[DocumentScanner] api url', analyzeUrl);
+        // eslint-disable-next-line no-console
+        console.log('[DocumentScanner] has api token', Boolean(apiToken));
+      }
       const data = await apiPost<DocumentData>(
         analyzeUrl,
         { imageBase64: capture },
@@ -218,7 +221,14 @@ export function DocumentScanner() {
 
       setDocumentData(data);
       setDocumentImage(capture);
-      if (!data.checkDigitsValid || data.isExpired) {
+      const canContinueToSelfie = isDocumentUsableForSelfie(data);
+      if (IS_DEV) {
+        // eslint-disable-next-line no-console
+        console.log('[DocumentScanner] documentData', data);
+        // eslint-disable-next-line no-console
+        console.log('[DocumentScanner] canContinueToSelfie', canContinueToSelfie);
+      }
+      if (!canContinueToSelfie || data.isExpired) {
         setStep('document', 'FAILED');
       } else {
         setStep('document', 'SUCCESS');
@@ -696,7 +706,10 @@ interface DocumentResultProps {
 }
 
 function DocumentResult({ data, onContinue, onRetake }: DocumentResultProps) {
-  const blocked = data.isExpired || !data.checkDigitsValid;
+  const canContinueToSelfie =
+    isDocumentUsableForSelfie(data) && !data.isExpired;
+  const blocked = !canContinueToSelfie;
+  const isPartial = !data.checkDigitsValid && canContinueToSelfie;
 
   const rows: { label: string; value?: string }[] = [
     { label: 'First name', value: data.firstName },
@@ -736,6 +749,30 @@ function DocumentResult({ data, onContinue, onRetake }: DocumentResultProps) {
           <span>
             <strong>Document expired</strong> — expired on{' '}
             {data.expirationDate}. Please use a valid document.
+          </span>
+        </div>
+      )}
+
+      {isPartial && (
+        <div
+          role="status"
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            border: `1px solid ${theme.warning}`,
+            background: 'rgba(245,158,11,0.08)',
+            color: theme.warning,
+            fontSize: 13,
+            display: 'flex',
+            gap: 10,
+            alignItems: 'flex-start',
+          }}
+        >
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Partial — some check digits failed</strong>
+            <br />
+            You can continue, but this document may require manual review.
           </span>
         </div>
       )}
