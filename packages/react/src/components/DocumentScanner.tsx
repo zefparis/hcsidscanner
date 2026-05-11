@@ -1,14 +1,24 @@
 /**
  * Étape 1 — Document scan (MRZ extraction).
  *
- * Uses react-webcam to capture a frame, sends it to /api/analyze-mrz which
- * runs `mrz-detection` (image segmentation + OCR) followed by `mrz` parsing
- * with full check-digit validation.
+ * Captures a high-resolution frame from the webcam (or a file upload),
+ * runs client-side quality checks (brightness, sharpness, size), then
+ * sends it to /api/analyze-mrz for MRZ detection + parsing.
  *
- * State machine: IDLE → CAPTURING → ANALYZING → RESULT → ERROR
+ * Enhancements over naive capture:
+ *  - HD camera constraints (1920×1080, continuous focus, rear camera)
+ *  - Native-resolution canvas capture (no downscale)
+ *  - Multi-frame stabilization (picks sharpest of 3)
+ *  - Pre-flight quality gate (brightness, sharpness, dimensions)
+ *  - Smart compression (> 5 MB → resize to 1600px + JPEG 0.85)
+ *  - File upload fallback
+ *  - Dev-only debug overlay (resolution, sharpness, brightness, size)
+ *  - Mobile UX (touch-action: none, no scroll/zoom during capture)
+ *
+ * State machine: IDLE → STABILIZING → CAPTURING → ANALYZING → RESULT → ERROR
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import {
   AlertTriangle,
@@ -17,27 +27,67 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Upload,
 } from 'lucide-react';
 
 import { theme, STATUS_COLOR } from '../lib/theme';
-import { apiPost, useIDVerification } from '../hooks/useIDVerification';
+import { ApiError, apiPost, useIDVerification } from '../hooks/useIDVerification';
+import {
+  captureStabilized,
+  validateCapture,
+  compressIfNeeded,
+  getQualityReport,
+  loadFileAsDataUrl,
+  type QualityReport,
+} from '../lib/capture-utils';
 import type { DocumentData } from '@hcs/id-scanner-core';
 
-type ScannerState = 'IDLE' | 'CAPTURING' | 'ANALYZING' | 'RESULT' | 'ERROR';
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+type ScannerState =
+  | 'IDLE'
+  | 'STABILIZING'
+  | 'CAPTURING'
+  | 'ANALYZING'
+  | 'RESULT'
+  | 'ERROR';
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  facingMode: { ideal: 'environment' },
+  width: { ideal: 1920, min: 1280 },
+  height: { ideal: 1080, min: 720 },
+  // @ts-expect-error — focusMode is valid but not in all TS lib defs
+  focusMode: { ideal: 'continuous' },
+};
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_request: 'Invalid request.',
+  invalid_input: 'The captured image could not be processed. Try again.',
+  INVALID_IMAGE_PAYLOAD: 'Image payload is missing or malformed. Try capturing again.',
   no_mrz_found:
+    'No MRZ band detected. Make sure the bottom of the document is in the frame and try again.',
+  MRZ_NOT_DETECTED:
     'No MRZ band detected. Make sure the bottom of the document is in the frame and try again.',
   parse_failed:
     'Could not read the MRZ. Try better lighting and avoid glare on the document.',
   network_error: 'Network error. Check your connection and retry.',
   parse_error: 'Unexpected response from the server.',
   server_misconfigured: 'Server is not configured for MRZ analysis.',
+  engine_unavailable: 'MRZ processing engine unavailable. Please try again later.',
+  invalid_image_file: 'File is not a valid image. Use JPEG or PNG.',
+  file_read_error: 'Could not read the file.',
 };
+
+const IS_DEV =
+  typeof window !== 'undefined' &&
+  (window.location?.hostname === 'localhost' ||
+    window.location?.hostname === '127.0.0.1');
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 export function DocumentScanner() {
   const webcamRef = useRef<Webcam>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     documentData,
@@ -54,20 +104,93 @@ export function DocumentScanner() {
   const [state, setState] = useState<ScannerState>('IDLE');
   const [capture, setCapture] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<QualityReport | null>(null);
+  const [analyzeStartTime, setAnalyzeStartTime] = useState<number>(0);
 
-  const onCapture = useCallback(() => {
-    const shot = webcamRef.current?.getScreenshot();
-    if (!shot) return;
-    setCapture(shot);
-    setState('CAPTURING');
+  // Prevent body scroll on mobile while in capture mode
+  useEffect(() => {
+    if (state === 'IDLE' || state === 'STABILIZING') {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [state]);
+
+  // ─── Capture: multi-frame stabilized ───────────────────────────────────
+
+  const onCapture = useCallback(async () => {
+    const video = webcamRef.current?.video;
+    if (!video) return;
+
+    setState('STABILIZING');
     setErrorMessage(null);
+
+    // Wait 300ms for stabilization, then capture 3 frames
+    await new Promise((r) => setTimeout(r, 300));
+    const result = await captureStabilized(video, 3, 120, 0.92);
+
+    if (!result) {
+      setErrorMessage('Capture failed. Make sure the camera is active.');
+      setState('ERROR');
+      return;
+    }
+
+    // Quality gate
+    const qualityError = validateCapture(result.canvas);
+    if (qualityError) {
+      setErrorMessage(qualityError.message);
+      setState('ERROR');
+      return;
+    }
+
+    // Compress if needed
+    const compressed = await compressIfNeeded(result.dataUrl);
+
+    // Debug info (dev only)
+    if (IS_DEV) {
+      setDebugInfo(getQualityReport(result.canvas, compressed));
+    }
+
+    setCapture(compressed);
+    setState('CAPTURING');
   }, []);
+
+  // ─── File upload fallback ──────────────────────────────────────────────
+
+  const onFileUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setErrorMessage(null);
+      setState('STABILIZING');
+
+      try {
+        const dataUrl = await loadFileAsDataUrl(file, 1600, 0.92);
+        setCapture(dataUrl);
+        setState('CAPTURING');
+      } catch (err) {
+        const code = (err as Error).message;
+        setErrorMessage(ERROR_MESSAGES[code] ?? 'Could not load file.');
+        setState('ERROR');
+      }
+
+      // Reset input so same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+    [],
+  );
+
+  // ─── Analyze ───────────────────────────────────────────────────────────
 
   const onAnalyze = useCallback(async () => {
     if (!capture) return;
     setState('ANALYZING');
     setStep('document', 'PROCESSING');
     setErrorMessage(null);
+    setAnalyzeStartTime(Date.now());
+
     try {
       const data = await apiPost<DocumentData>(
         '/api/analyze-mrz',
@@ -75,6 +198,14 @@ export function DocumentScanner() {
         undefined,
         authHeaders,
       );
+
+      if (IS_DEV) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[DocumentScanner] analyze took ${Date.now() - analyzeStartTime}ms`,
+        );
+      }
+
       setDocumentData(data);
       setDocumentImage(capture);
       if (!data.checkDigitsValid || data.isExpired) {
@@ -85,11 +216,17 @@ export function DocumentScanner() {
       setState('RESULT');
     } catch (err) {
       const code = (err as Error).message;
-      setErrorMessage(ERROR_MESSAGES[code] ?? 'Document analysis failed.');
+      const serverMsg =
+        err instanceof ApiError ? err.serverMessage : undefined;
+      setErrorMessage(
+        serverMsg || (ERROR_MESSAGES[code] ?? 'Document analysis failed.'),
+      );
       setStep('document', 'FAILED');
       setState('ERROR');
     }
-  }, [capture, setDocumentData, setDocumentImage, setStep, authHeaders]);
+  }, [capture, setDocumentData, setDocumentImage, setStep, authHeaders, analyzeStartTime]);
+
+  // ─── Retake ────────────────────────────────────────────────────────────
 
   const onRetake = useCallback(() => {
     setCapture(null);
@@ -97,12 +234,15 @@ export function DocumentScanner() {
     setDocumentImage(null);
     setStep('document', 'PENDING');
     setErrorMessage(null);
+    setDebugInfo(null);
     setState('IDLE');
   }, [setDocumentData, setDocumentImage, setStep]);
 
   const onContinue = useCallback(() => {
     setCurrentStep('FACE_MATCH');
   }, [setCurrentStep]);
+
+  // ─── Render ────────────────────────────────────────────────────────────
 
   return (
     <section style={{ display: 'grid', gap: 18 }}>
@@ -147,12 +287,15 @@ export function DocumentScanner() {
       {state !== 'RESULT' && (
         <CameraStage
           webcamRef={webcamRef}
+          fileInputRef={fileInputRef}
           capture={capture}
           state={state}
           onCapture={onCapture}
           onAnalyze={onAnalyze}
           onRetake={onRetake}
+          onFileUpload={onFileUpload}
           errorMessage={errorMessage}
+          debugInfo={debugInfo}
         />
       )}
 
@@ -170,32 +313,39 @@ export function DocumentScanner() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Camera stage — webcam preview + MRZ guide overlay + capture preview
-// ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Camera stage — webcam preview + MRZ guide + file upload + debug overlay
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface CameraStageProps {
   webcamRef: React.RefObject<Webcam | null>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   capture: string | null;
   state: ScannerState;
   onCapture: () => void;
   onAnalyze: () => void;
   onRetake: () => void;
+  onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   errorMessage: string | null;
+  debugInfo: QualityReport | null;
 }
 
 function CameraStage({
   webcamRef,
+  fileInputRef,
   capture,
   state,
   onCapture,
   onAnalyze,
   onRetake,
+  onFileUpload,
   errorMessage,
+  debugInfo,
 }: CameraStageProps) {
-  const busy = state === 'ANALYZING';
+  const busy = state === 'ANALYZING' || state === 'STABILIZING';
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {/* Camera / preview container — prevent pinch-zoom on mobile */}
       <div
         style={{
           position: 'relative',
@@ -204,6 +354,9 @@ function CameraStage({
           overflow: 'hidden',
           aspectRatio: '4 / 3',
           border: `1px solid ${theme.border}`,
+          touchAction: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
         }}
       >
         {capture ? (
@@ -218,7 +371,7 @@ function CameraStage({
             audio={false}
             screenshotFormat="image/jpeg"
             screenshotQuality={0.92}
-            videoConstraints={{ facingMode: 'environment' }}
+            videoConstraints={VIDEO_CONSTRAINTS}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
         )}
@@ -226,6 +379,26 @@ function CameraStage({
         {/* Guide overlay — only when live */}
         {!capture && <MrzGuideOverlay />}
 
+        {/* Stabilizing indicator */}
+        {state === 'STABILIZING' && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'grid',
+              placeItems: 'center',
+              background: 'rgba(5,12,20,0.45)',
+              color: theme.text,
+              fontSize: 14,
+              gap: 8,
+            }}
+          >
+            <Loader2 size={24} className="hcs-spin" />
+            <div style={{ fontWeight: 600 }}>Stabilizing…</div>
+          </div>
+        )}
+
+        {/* Analyzing overlay */}
         {capture && state === 'ANALYZING' && (
           <div
             style={{
@@ -249,6 +422,7 @@ function CameraStage({
         )}
       </div>
 
+      {/* Instruction */}
       <p
         style={{
           margin: 0,
@@ -257,9 +431,33 @@ function CameraStage({
           fontSize: 13,
         }}
       >
-        Place the bottom of the document inside the frame
+        Place the MRZ zone (bottom 2 lines) inside the highlighted area
       </p>
 
+      {/* Debug overlay (dev only) */}
+      {IS_DEV && debugInfo && (
+        <div
+          style={{
+            padding: 8,
+            borderRadius: 8,
+            background: 'rgba(0,200,255,0.06)',
+            border: `1px solid ${theme.border}`,
+            fontSize: 11,
+            fontFamily: 'monospace',
+            color: theme.textMuted,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: 4,
+          }}
+        >
+          <span>📐 {debugInfo.width}×{debugInfo.height}</span>
+          <span>☀️ brightness: {Math.round(debugInfo.brightness)}</span>
+          <span>🔍 sharpness: {Math.round(debugInfo.sharpness)}</span>
+          <span>💾 {(debugInfo.sizeBytes / 1024).toFixed(0)} KB</span>
+        </div>
+      )}
+
+      {/* Error message */}
       {errorMessage && (
         <div
           role="alert"
@@ -276,6 +474,7 @@ function CameraStage({
         </div>
       )}
 
+      {/* Actions */}
       <div
         style={{
           display: 'flex',
@@ -285,10 +484,37 @@ function CameraStage({
         }}
       >
         {!capture && (
-          <button type="button" onClick={onCapture} style={btnPrimary(busy)}>
-            <Camera size={16} />
-            Capture
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onCapture}
+              disabled={busy}
+              style={btnPrimary(busy)}
+            >
+              {busy ? (
+                <Loader2 size={16} className="hcs-spin" />
+              ) : (
+                <Camera size={16} />
+              )}
+              {busy ? 'Capturing…' : 'Capture'}
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+              style={btnSecondary(busy)}
+            >
+              <Upload size={16} />
+              Upload photo
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={onFileUpload}
+              style={{ display: 'none' }}
+            />
+          </>
         )}
         {capture && (
           <>
@@ -307,12 +533,12 @@ function CameraStage({
               disabled={busy}
               style={btnPrimary(busy)}
             >
-              {busy ? (
+              {state === 'ANALYZING' ? (
                 <Loader2 size={16} className="hcs-spin" />
               ) : (
                 <ShieldCheck size={16} />
               )}
-              {busy ? 'Analyzing…' : 'Analyze'}
+              {state === 'ANALYZING' ? 'Analyzing…' : 'Analyze'}
             </button>
           </>
         )}
@@ -321,9 +547,11 @@ function CameraStage({
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MRZ Guide Overlay — materialized MRZ zone with label
+// ─────────────────────────────────────────────────────────────────────────────
+
 function MrzGuideOverlay() {
-  // Guide rectangle: 85% width, 55% height, centred, with rounded corners
-  // and an animated horizontal scan line.
   return (
     <>
       <svg
@@ -340,40 +568,68 @@ function MrzGuideOverlay() {
         <defs>
           <mask id="cutout">
             <rect width="100" height="75" fill="white" />
+            {/* Document area */}
             <rect
               x="7.5"
-              y="16.25"
+              y="12"
               width="85"
-              height="41.25"
+              height="51"
               rx="2.2"
               ry="2.2"
               fill="black"
             />
           </mask>
         </defs>
+        {/* Dim area outside document */}
         <rect
           width="100"
           height="75"
-          fill="rgba(5,12,20,0.5)"
+          fill="rgba(5,12,20,0.55)"
           mask="url(#cutout)"
         />
+        {/* Document border */}
         <rect
           x="7.5"
-          y="16.25"
+          y="12"
           width="85"
-          height="41.25"
+          height="51"
           rx="2.2"
           ry="2.2"
           fill="none"
-          stroke="rgba(255,255,255,0.85)"
-          strokeWidth="0.4"
+          stroke="rgba(255,255,255,0.7)"
+          strokeWidth="0.35"
         />
+        {/* MRZ zone highlight (bottom ~25% of document area) */}
+        <rect
+          x="9"
+          y="50"
+          width="82"
+          height="11.5"
+          rx="1"
+          ry="1"
+          fill="rgba(0,200,255,0.08)"
+          stroke={theme.accent}
+          strokeWidth="0.4"
+          strokeDasharray="1.5 0.8"
+        />
+        {/* MRZ zone label */}
+        <text
+          x="50"
+          y="48.5"
+          textAnchor="middle"
+          fill={theme.accent}
+          fontSize="2.8"
+          fontFamily="system-ui, sans-serif"
+          fontWeight="600"
+        >
+          ▼ MRZ ZONE ▼
+        </text>
         {/* Corner accents */}
         {[
-          { x: 7.5, y: 16.25, dx: 1, dy: 1 },
-          { x: 92.5, y: 16.25, dx: -1, dy: 1 },
-          { x: 7.5, y: 57.5, dx: 1, dy: -1 },
-          { x: 92.5, y: 57.5, dx: -1, dy: -1 },
+          { x: 7.5, y: 12, dx: 1, dy: 1 },
+          { x: 92.5, y: 12, dx: -1, dy: 1 },
+          { x: 7.5, y: 63, dx: 1, dy: -1 },
+          { x: 92.5, y: 63, dx: -1, dy: -1 },
         ].map((c, i) => (
           <g key={i} stroke={theme.accent} strokeWidth="0.6">
             <line x1={c.x} y1={c.y} x2={c.x + c.dx * 4} y2={c.y} />
@@ -382,17 +638,17 @@ function MrzGuideOverlay() {
         ))}
       </svg>
 
-      {/* Animated scan line */}
+      {/* Animated scan line in MRZ zone */}
       <div
         style={{
           position: 'absolute',
-          left: '7.5%',
-          right: '7.5%',
-          top: '16.25%',
-          bottom: '42.5%',
+          left: '9%',
+          right: '9%',
+          top: '66.7%',
+          height: '15.3%',
           pointerEvents: 'none',
           overflow: 'hidden',
-          borderRadius: 6,
+          borderRadius: 4,
         }}
       >
         <div

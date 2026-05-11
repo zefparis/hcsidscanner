@@ -20,6 +20,7 @@ export { Stepper } from './components/Stepper';
 export {
   useIDVerification,
   apiPost,
+  ApiError,
 } from './hooks/useIDVerification';
 
 export { theme, STATUS_COLOR } from './lib/theme';

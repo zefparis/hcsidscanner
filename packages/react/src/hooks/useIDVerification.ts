@@ -99,8 +99,21 @@ export const useIDVerification = create<IDVerificationState>((set) => ({
 }));
 
 /**
- * POSTs JSON to a relative URL and parses the response, throwing the API's
- * `error` code (or 'network_error' / 'parse_error') on failure.
+ * Error thrown by `apiPost` when the server responds with an error payload.
+ * Carries both the machine-readable code and optional human-readable message.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly serverMessage?: string,
+  ) {
+    super(code);
+  }
+}
+
+/**
+ * POSTs JSON to a relative URL and parses the response, throwing an `ApiError`
+ * (or plain Error for 'network_error' / 'parse_error') on failure.
  */
 export async function apiPost<T>(
   url: string,
@@ -126,8 +139,9 @@ export async function apiPost<T>(
     throw new Error('parse_error');
   }
   if (!res.ok) {
-    const code = (data as { error?: string })?.error ?? `http_${res.status}`;
-    throw new Error(code);
+    const payload = data as { error?: string; message?: string };
+    const code = payload?.error ?? `http_${res.status}`;
+    throw new ApiError(code, payload?.message ?? undefined);
   }
   return data as T;
 }
