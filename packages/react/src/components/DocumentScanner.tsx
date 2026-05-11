@@ -196,9 +196,10 @@ export function DocumentScanner() {
     setAnalyzeStartTime(Date.now());
 
     try {
-      const analyzeUrl = hcsApiUrl
-        ? `${hcsApiUrl.replace(/\/$/, '')}/api/analyze-mrz`
-        : '/api/analyze-mrz';
+      if (!hcsApiUrl) {
+        throw new Error('hcsApiUrl is required');
+      }
+      const analyzeUrl = `${hcsApiUrl.replace(/\/$/, '')}/api/analyze-mrz`;
       if (IS_DEV) {
         // eslint-disable-next-line no-console
         console.log('[DocumentScanner] api url', analyzeUrl);

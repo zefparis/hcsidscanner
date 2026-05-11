@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -13,11 +13,15 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hcs/id-scanner-native":  ["./src/types/id-scanner-native.d.ts"],
+      "@hcs/id-scanner-core":    ["../../packages/core/dist/index.d.ts"]
+    }
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.tsx",
-    "../core/src/modules.d.ts"
+    "src/**/*.tsx"
   ]
 }

@@ -68,10 +68,22 @@ class PassportNfcModule(
       return
     }
 
+    val cleanDoc = documentNumber.replace("[^A-Za-z0-9<]".toRegex(), "").uppercase()
+    val cleanDob = dateOfBirthYYMMDD.replace("[^0-9]".toRegex(), "").take(6)
+    val cleanDoe = expirationDateYYMMDD.replace("[^0-9]".toRegex(), "").take(6)
+
+    Log.i(TAG, "readPassport called: doc='$cleanDoc' (${cleanDoc.length}), dob='$cleanDob' (${cleanDob.length}), doe='$cleanDoe' (${cleanDoe.length})")
+
+    if (cleanDoc.isEmpty() || cleanDob.length != 6 || cleanDoe.length != 6) {
+      reading.set(false)
+      promise.reject("BAC_FAILED", "Invalid BAC keys: document='$cleanDoc', dob='$cleanDob', doe='$cleanDoe'. Dates must be 6 digits (YYMMDD).")
+      return
+    }
+
     pendingPromise = promise
-    pendingDocumentNumber = documentNumber
-    pendingDateOfBirth = dateOfBirthYYMMDD
-    pendingExpirationDate = expirationDateYYMMDD
+    pendingDocumentNumber = cleanDoc
+    pendingDateOfBirth = cleanDob
+    pendingExpirationDate = cleanDoe
     Log.i(TAG, "NFC passport reader session started")
 
     activity.runOnUiThread {
@@ -88,6 +100,10 @@ class PassportNfcModule(
 
   private fun handleTag(activity: Activity, adapter: NfcAdapter, tag: Tag) {
     Log.i(TAG, "IsoDep-compatible NFC tag callback received")
+    if (!reading.get()) {
+      Log.w(TAG, "Ignoring tag callback - no read in progress (already completed or cancelled)")
+      return
+    }
     Thread {
       try {
         val documentNumber = pendingDocumentNumber ?: throw PassportReadException(
@@ -107,7 +123,8 @@ class PassportNfcModule(
       } catch (err: PassportReadException) {
         reject(err.code, err.message ?: err.code)
       } catch (err: Throwable) {
-        reject("DG_READ_FAILED", err.message ?: "Could not read passport chip.")
+        Log.e(TAG, "Unexpected exception: ${err.javaClass.simpleName}: ${err.message}", err)
+        reject("DG_READ_FAILED", "${err.javaClass.simpleName}: ${err.message ?: "Unexpected exception"}")
       } finally {
         activity.runOnUiThread { adapter.disableReaderMode(activity) }
         clearState()
@@ -140,34 +157,47 @@ class PassportNfcModule(
         false,
       )
       passportService.open()
+      passportService.sendSelectApplet(false)
 
       val warnings = Arguments.createArray()
       tryReadPace(passportService, warnings)
 
-      Log.i(TAG, "BAC start")
+      Log.i(TAG, "BAC start with doc='$documentNumber', dob='$dateOfBirthYYMMDD', doe='$expirationDateYYMMDD'")
       try {
         passportService.doBAC(BACKey(documentNumber, dateOfBirthYYMMDD, expirationDateYYMMDD))
         Log.i(TAG, "BAC success")
       } catch (err: Throwable) {
-        Log.w(TAG, "BAC failed")
-        throw PassportReadException("BAC_FAILED", err.message ?: "BAC failed.")
+        Log.w(TAG, "BAC failed: ${err.message}")
+        throw PassportReadException("BAC_FAILED", "BAC failed in ${err.message ?: "unknown"} (step: doBAC)")
       }
 
+      Log.i(TAG, "Reading COM...")
       val com = readCom(passportService)
+      Log.i(TAG, "Reading DG1...")
       val dg1 = readDg1(passportService)
-      val dg2FaceImageBase64 = readDg2FaceImage(passportService)
+      Log.i(TAG, "Reading SOD...")
       val sod = readSod(passportService)
+
+      Log.i(TAG, "Reading DG2 (face image)...")
+      var dg2FaceImageBase64: String? = null
+      try {
+        dg2FaceImageBase64 = readDg2FaceImage(passportService)
+      } catch (err: Throwable) {
+        Log.w(TAG, "DG2 face image read failed (non-fatal): ${err.javaClass.simpleName}: ${err.message}")
+        warnings.pushString("Face image could not be read: ${err.javaClass.simpleName}")
+      }
+
       warnings.pushString("Passive authentication not implemented yet")
+
+      val chipDocNum = dg1.getString("documentNumber")
+      val chipMrzMatches = normalizeDocumentNumber(chipDocNum) == normalizeDocumentNumber(documentNumber)
 
       return Arguments.createMap().apply {
         putMap("com", com)
         putMap("dg1", dg1)
-        putString("dg2FaceImageBase64", dg2FaceImageBase64)
+        if (dg2FaceImageBase64 != null) putString("dg2FaceImageBase64", dg2FaceImageBase64) else putNull("dg2FaceImageBase64")
         putMap("sod", sod)
-        putBoolean(
-          "chipMrzMatchesScannedMrz",
-          normalizeDocumentNumber(dg1.getString("documentNumber")) == normalizeDocumentNumber(documentNumber),
-        )
+        putBoolean("chipMrzMatchesScannedMrz", chipMrzMatches)
         putNull("passiveAuthenticationPassed")
         putArray("warnings", warnings)
       }
@@ -200,8 +230,8 @@ class PassportNfcModule(
         })
       }
     } catch (err: Throwable) {
-      Log.w(TAG, "COM read failed")
-      throw PassportReadException("DG_READ_FAILED", err.message ?: "Could not read COM.")
+      Log.w(TAG, "COM read failed: ${err.javaClass.simpleName}: ${err.message}", err)
+      throw PassportReadException("DG_READ_FAILED", "COM: ${err.javaClass.simpleName}: ${err.message}")
     }
   }
 
@@ -221,8 +251,8 @@ class PassportNfcModule(
         putString("sex", info.gender.toString())
       }
     } catch (err: Throwable) {
-      Log.w(TAG, "DG1 read failed")
-      throw PassportReadException("DG_READ_FAILED", err.message ?: "Could not read DG1.")
+      Log.w(TAG, "DG1 read failed: ${err.javaClass.simpleName}: ${err.message}", err)
+      throw PassportReadException("DG_READ_FAILED", "DG1: ${err.javaClass.simpleName}: ${err.message}")
     }
   }
 
@@ -237,8 +267,8 @@ class PassportNfcModule(
       Log.i(TAG, "DG2 read success")
       "data:$mimeType;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
     } catch (err: Throwable) {
-      Log.w(TAG, "DG2 read failed")
-      throw PassportReadException("DG_READ_FAILED", err.message ?: "Could not read DG2.")
+      Log.w(TAG, "DG2 read failed: ${err.javaClass.simpleName}: ${err.message}", err)
+      throw err
     }
   }
 
@@ -254,8 +284,8 @@ class PassportNfcModule(
         })
       }
     } catch (err: Throwable) {
-      Log.w(TAG, "SOD read failed")
-      throw PassportReadException("DG_READ_FAILED", err.message ?: "Could not read SOD.")
+      Log.w(TAG, "SOD read failed: ${err.javaClass.simpleName}: ${err.message}", err)
+      throw PassportReadException("DG_READ_FAILED", "SOD: ${err.javaClass.simpleName}: ${err.message}")
     }
   }
 

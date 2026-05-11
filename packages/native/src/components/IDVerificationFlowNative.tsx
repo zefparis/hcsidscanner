@@ -1,20 +1,8 @@
 /**
  * IDVerificationFlowNative — single drop-in component that wraps the
  * 3-step KYC pipeline for React Native.
- *
- * ```tsx
- * import { IDVerificationFlowNative } from '@hcs/id-scanner-native';
- *
- * <IDVerificationFlowNative
- *   config={{ tenantId, minFaceMatchScore: 80 }}
- *   endpoints={{
- *     analyzeMrz: 'https://api.example.com/api/analyze-mrz',
- *     faceMatch:  'https://api.example.com/api/face-match',
- *   }}
- *   onComplete={(r) => navigation.replace('Onboarding', { kyc: r })}
- *   onError={(c) => Alert.alert('KYC failed', c)}
- * />
- * ```
+ * 
+ * Requires endpoints configuration for MRZ analysis and face matching.
  */
 
 import { useEffect, useMemo } from 'react';

@@ -25,9 +25,6 @@ interface KycRegistrationPayload {
   tenantId: string;
 }
 
-const HCS_API_URL_FALLBACK = 'https://hcs-u7-backend-kk0n.onrender.com';
-const TENANT_ID_FALLBACK = 'hcs-id-scanner-demo';
-
 export function IDVerificationResult() {
   const {
     steps,
@@ -38,9 +35,6 @@ export function IDVerificationResult() {
     setStep,
     setKycScore,
   } = useIDVerification();
-
-  const effectiveApiUrl = hcsApiUrl || HCS_API_URL_FALLBACK;
-  const effectiveTenantId = tenantId || TENANT_ID_FALLBACK;
 
   const [busy, setBusy] = useState(false);
   const [registered, setRegistered] = useState<{
@@ -81,11 +75,14 @@ export function IDVerificationResult() {
       faceMatchScore: faceMatchResult.similarity,
       kycScore: composite,
       timestamp: new Date().toISOString(),
-      tenantId: effectiveTenantId,
+      tenantId: tenantId ?? 'unknown',
     };
 
     try {
-      const res = await fetch(`${effectiveApiUrl}/api/kyc/register`, {
+      if (!hcsApiUrl) {
+        throw new Error('hcsApiUrl is required');
+      }
+      const res = await fetch(`${hcsApiUrl}/api/kyc/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),

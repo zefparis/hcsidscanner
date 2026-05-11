@@ -1,0 +1,31 @@
+{
+  "name": "hcs-id-scanner-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "start": "react-native start",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-native": "^0.73.0",
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/stack": "^6.3.20",
+    "react-native-gesture-handler": "^2.14.1",
+    "react-native-safe-area-context": "^4.8.2",
+    "react-native-screens": "^3.29.0",
+    "react-native-nfc-manager": "^3.17.0",
+    "react-native-vision-camera": "^4.6.0",
+    "vision-camera-mrz-scanner": "^0.3.1",
+    "zustand": "^5.0.12",
+    "@hcs/id-scanner-native": "*",
+    "@hcs/id-scanner-core": "*"
+  },
+  "devDependencies": {
+    "@types/react": "18.2.48",
+    "typescript": "^5.3.3"
+  }
+}
