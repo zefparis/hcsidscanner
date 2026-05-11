@@ -198,6 +198,10 @@ export function DocumentScanner() {
       const analyzeUrl = hcsApiUrl
         ? `${hcsApiUrl.replace(/\/$/, '')}/api/analyze-mrz`
         : '/api/analyze-mrz';
+      // eslint-disable-next-line no-console
+      console.log('[DocumentScanner] api url', analyzeUrl);
+      // eslint-disable-next-line no-console
+      console.log('[DocumentScanner] has api token', Boolean(apiToken));
       const data = await apiPost<DocumentData>(
         analyzeUrl,
         { imageBase64: capture },
@@ -230,7 +234,7 @@ export function DocumentScanner() {
       setStep('document', 'FAILED');
       setState('ERROR');
     }
-  }, [capture, hcsApiUrl, setDocumentData, setDocumentImage, setStep, authHeaders, analyzeStartTime]);
+  }, [capture, hcsApiUrl, apiToken, setDocumentData, setDocumentImage, setStep, authHeaders, analyzeStartTime]);
 
   // ─── Retake ────────────────────────────────────────────────────────────
 

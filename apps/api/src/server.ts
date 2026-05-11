@@ -68,6 +68,10 @@ app.use(
 
 app.use(express.json({ limit: '4mb' }));
 
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, service: SERVICE_NAME });
+});
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (
@@ -87,10 +91,6 @@ app.use((req, res, next) => {
     return;
   }
   next();
-});
-
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: SERVICE_NAME });
 });
 
 app.post('/api/analyze-mrz', async (req: Request, res: Response) => {
