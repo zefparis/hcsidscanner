@@ -15,6 +15,7 @@ import type {
   StepStatus,
   StepperState,
 } from '@hcs/id-scanner-core';
+import type { PassportNfcResult } from '../nfc';
 
 interface IDVerificationNativeState {
   currentStep: Step;
@@ -30,6 +31,7 @@ interface IDVerificationNativeState {
 
   /** When NFC is supported and the chip was successfully read. */
   nfcChipAuthentic: boolean | null;
+  passportNfcResult: PassportNfcResult | null;
 
   errorMessage: string | null;
 
@@ -41,12 +43,14 @@ interface IDVerificationNativeState {
   setFaceMatchResult: (r: FaceMatchResult | null) => void;
   setKycScore: (score: number | null) => void;
   setNfcChipAuthentic: (ok: boolean | null) => void;
+  setPassportNfcResult: (result: PassportNfcResult | null) => void;
   setError: (msg: string | null) => void;
   reset: () => void;
 }
 
 const initialSteps: StepperState = {
   document: 'PENDING',
+  nfcPassport: 'PENDING',
   faceMatch: 'PENDING',
   result: 'PENDING',
 };
@@ -61,6 +65,7 @@ export const useIDVerificationNative = create<IDVerificationNativeState>(
     faceMatchResult: null,
     kycScore: null,
     nfcChipAuthentic: null,
+    passportNfcResult: null,
     errorMessage: null,
 
     setStep: (id, status) =>
@@ -72,6 +77,7 @@ export const useIDVerificationNative = create<IDVerificationNativeState>(
     setFaceMatchResult: (faceMatchResult) => set({ faceMatchResult }),
     setKycScore: (kycScore) => set({ kycScore }),
     setNfcChipAuthentic: (nfcChipAuthentic) => set({ nfcChipAuthentic }),
+    setPassportNfcResult: (passportNfcResult) => set({ passportNfcResult }),
     setError: (errorMessage) => set({ errorMessage }),
     reset: () =>
       set({
@@ -83,6 +89,7 @@ export const useIDVerificationNative = create<IDVerificationNativeState>(
         faceMatchResult: null,
         kycScore: null,
         nfcChipAuthentic: null,
+        passportNfcResult: null,
         errorMessage: null,
       }),
   }),

@@ -8,7 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.gradle
 dist
+build
 dist-ssr
 *.local
 
@@ -30,6 +32,16 @@ dist-ssr
 
 # Capacitor / Android
 android/
+!packages/native/android/
+!packages/native/android/**
+packages/native/android/.gradle/
+packages/native/android/build/
+!apps/demo-native/android/
+!apps/demo-native/android/**
+apps/demo-native/android/.gradle/
+apps/demo-native/android/build/
+apps/demo-native/android/app/build/
+apps/demo-native/android/gradle-build.log
 ios/
 .capacitor/
 *.keystore

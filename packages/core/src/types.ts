@@ -77,6 +77,10 @@ export interface IDScannerConfig {
   minFaceMatchScore?: number;
   /** When false, `IDVerificationFlow` skips the selfie step. Default true. */
   requireFaceMatch?: boolean;
+  /** Enables the optional native-only passport NFC step. Web ignores this. */
+  enableNfc?: boolean;
+  /** When true, native users must read the passport NFC chip before selfie. */
+  requireNfc?: boolean;
   /** HCS-U7 KYC ingestion endpoint base URL. */
   hcsApiUrl?: string;
   /** Tenant identifier — required to scope the verdict in HCS-U7. */
@@ -94,10 +98,11 @@ export interface IDScannerConfig {
 
 export type StepStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
 
-export type Step = 'DOCUMENT' | 'FACE_MATCH' | 'RESULT';
+export type Step = 'DOCUMENT' | 'NFC_PASSPORT' | 'FACE_MATCH' | 'RESULT';
 
 export interface StepperState {
   document: StepStatus;
+  nfcPassport?: StepStatus;
   faceMatch: StepStatus;
   result: StepStatus;
 }

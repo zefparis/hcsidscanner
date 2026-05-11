@@ -27,7 +27,7 @@ import {
 
 import { DocumentScannerNative } from './DocumentScannerNative';
 import { FaceMatchNative } from './FaceMatchNative';
-import { NFCReaderNative } from './NFCReaderNative';
+import { PassportNfcReader } from './PassportNfcReader';
 import { useIDVerificationNative } from '../hooks/useIDVerificationNative';
 
 export interface IDVerificationFlowNativeProps {
@@ -39,8 +39,6 @@ export interface IDVerificationFlowNativeProps {
     faceMatch: string;
   };
   authHeader?: string;
-  /** Whether to also try reading the NFC chip after the MRZ. Default true. */
-  enableNfc?: boolean;
   onComplete?: (result: IDVerificationResult) => void;
   onError?: (code: string) => void;
 }
@@ -49,7 +47,6 @@ export function IDVerificationFlowNative({
   config,
   endpoints,
   authHeader,
-  enableNfc = true,
   onComplete,
   onError,
 }: IDVerificationFlowNativeProps) {
@@ -103,18 +100,19 @@ export function IDVerificationFlowNative({
         />
       );
     }
+    if (currentStep === 'NFC_PASSPORT') {
+      if (!config.enableNfc) {
+        return <PassportNfcReader optional onSkip={() => undefined} />;
+      }
+      return <PassportNfcReader optional={!config.requireNfc} />;
+    }
     if (currentStep === 'FACE_MATCH' && config.requireFaceMatch !== false) {
       return (
-        <View style={{ flex: 1 }}>
-          {enableNfc && documentData && (
-            <NFCReaderNative />
-          )}
-          <FaceMatchNative
-            faceMatchEndpoint={endpoints.faceMatch}
-            authHeader={authHeader}
-            threshold={config.minFaceMatchScore}
-          />
-        </View>
+        <FaceMatchNative
+          faceMatchEndpoint={endpoints.faceMatch}
+          authHeader={authHeader}
+          threshold={config.minFaceMatchScore}
+        />
       );
     }
     return (
@@ -130,11 +128,12 @@ export function IDVerificationFlowNative({
     );
   }, [
     authHeader,
+    config.enableNfc,
     config.minFaceMatchScore,
     config.requireFaceMatch,
+    config.requireNfc,
     currentStep,
     documentData,
-    enableNfc,
     endpoints.analyzeMrz,
     endpoints.faceMatch,
     kycScore,

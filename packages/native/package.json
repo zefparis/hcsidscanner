@@ -9,8 +9,11 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "android",
     "src",
-    "dist"
+    "dist",
+    "react-native.config.cjs",
+    "ANDROID_NFC.md"
   ],
   "peerDependencies": {
     "react": ">=18",
@@ -39,6 +42,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
+    "react-native-nfc-manager": "^3.17.0",
     "typescript": "^5.6.3"
   }
 }

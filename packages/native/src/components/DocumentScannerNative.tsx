@@ -79,7 +79,7 @@ export function DocumentScannerNative({
         setDocumentData(data);
         setDocumentImageUri(`data:image/jpeg;base64,${mrzImageBase64}`);
         setStep('document', data.checkDigitsValid ? 'SUCCESS' : 'FAILED');
-        setCurrentStep('FACE_MATCH');
+        setCurrentStep('NFC_PASSPORT');
       } catch {
         setStep('document', 'FAILED');
       } finally {

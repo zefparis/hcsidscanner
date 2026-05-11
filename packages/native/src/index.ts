@@ -15,9 +15,18 @@ export {
 
 export { DocumentScannerNative } from './components/DocumentScannerNative';
 export { FaceMatchNative } from './components/FaceMatchNative';
-export { NFCReaderNative } from './components/NFCReaderNative';
+export { PassportNfcReader } from './components/PassportNfcReader';
 
 export { useIDVerificationNative } from './hooks/useIDVerificationNative';
+export {
+  PassportNfcError,
+  readPassportNfc,
+  type PassportNfcAccessKeys,
+  type PassportNfcDataGroups,
+  type PassportNfcErrorCode,
+  type PassportNfcReaderOptions,
+  type PassportNfcResult,
+} from './nfc';
 
 // Re-export public core types for convenience.
 export type {
