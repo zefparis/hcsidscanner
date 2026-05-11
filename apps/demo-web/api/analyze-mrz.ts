@@ -17,10 +17,6 @@ import {
   type ApiHandler,
 } from './_helpers.js';
 
-export const config = {
-  runtime: 'nodejs',
-};
-
 // ── Robust payload extraction ────────────────────────────────────────────
 
 /**
@@ -99,7 +95,13 @@ const handler: ApiHandler = async (req, res) => {
   }
 
   try {
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] before core import');
     const core = await import('@hcs/id-scanner-core');
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] after core import');
+    // eslint-disable-next-line no-console
+    console.log('[analyze-mrz] before analyzeMRZ');
     const documentData = await core.analyzeMRZ(imageBase64);
     sendJson(res, 200, documentData);
   } catch (err) {
