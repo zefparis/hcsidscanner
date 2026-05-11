@@ -87,7 +87,7 @@ export async function captureStabilized(
  * Uses the standard BT.601 coefficients for perceptual brightness.
  */
 export function computeBrightness(canvas: HTMLCanvasElement): number {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return 0;
 
   // Sample a center region (60% of the image) for efficiency
@@ -115,7 +115,7 @@ export function computeBrightness(canvas: HTMLCanvasElement): number {
  * Higher = sharper. Computed on a downsampled grayscale for performance.
  */
 export function computeSharpness(canvas: HTMLCanvasElement): number {
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return 0;
 
   // Downsample to ~320px wide for perf
@@ -126,7 +126,7 @@ export function computeSharpness(canvas: HTMLCanvasElement): number {
   const tmp = document.createElement('canvas');
   tmp.width = w;
   tmp.height = h;
-  const tmpCtx = tmp.getContext('2d');
+  const tmpCtx = tmp.getContext('2d', { willReadFrequently: true });
   if (!tmpCtx) return 0;
   tmpCtx.drawImage(canvas, 0, 0, w, h);
 
