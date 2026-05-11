@@ -4,10 +4,6 @@ plugins {
   id("com.facebook.react")
 }
 
-project.ext.react = [
-  enableHermes: false
-]
-
 react {
   root = file("../..")
   reactNativeDir = file("../../node_modules/react-native")
@@ -15,6 +11,8 @@ react {
   cliFile = file("../../node_modules/react-native/cli.js")
   entryFile = file("../index.js")
   autolinkLibrariesWithApp()
+
+  hermesEnabled = true
 }
 
 android {
@@ -49,10 +47,5 @@ android {
 
 dependencies {
   implementation("com.facebook.react:react-android")
-
-  if (hermesEnabled.toBoolean()) {
-    implementation("com.facebook.react:hermes-android")
-  } else {
-    implementation("org.webkit:android-jsc:+")
-  }
+  implementation("com.facebook.react:hermes-android")
 }
