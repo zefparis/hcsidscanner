@@ -30,7 +30,7 @@ import {
 // @ts-ignore — frame processor plugin, no public types yet.
 import { useMRZScanner } from 'vision-camera-mrz-scanner';
 
-import type { DocumentData } from '@hcs/id-scanner-core';
+import type { DocumentData } from '@hcs/id-scanner-core/types';
 
 import { useIDVerificationNative } from '../hooks/useIDVerificationNative';
 

@@ -7,7 +7,7 @@ module.exports = {
         root: ['./src'],
         alias: {
           '@hcs/id-scanner-native': '../../packages/native/src',
-          '@hcs/id-scanner-core': '../../packages/core/src',
+          '@hcs/id-scanner-core':   '../../packages/core/src',
         },
       },
     ],

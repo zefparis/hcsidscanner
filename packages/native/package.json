@@ -19,8 +19,8 @@
     "react": ">=18",
     "react-native": ">=0.73",
     "react-native-nfc-manager": ">=3",
-    "react-native-vision-camera": ">=4",
-    "vision-camera-mrz-scanner": ">=2"
+    "react-native-vision-camera": ">=3",
+    "vision-camera-mrz-scanner": ">=0.3"
   },
   "peerDependenciesMeta": {
     "react-native": {
@@ -41,7 +41,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@types/react": "^19.2.14",
+    "@types/react": "18.2.48",
     "react-native-nfc-manager": "^3.17.0",
     "typescript": "^5.6.3"
   }

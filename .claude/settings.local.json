@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx react-native *)",
+      "Bash(npm ls *)",
+      "Bash(node -e \"console.log\\(require.resolve\\('react'\\)\\)\")",
+      "Bash(node -e \"console.log\\(require\\('react/package.json'\\).version\\)\")",
+      "Bash(node -e \"const j=JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/rnconfig.json','utf8'\\)\\); console.log\\(Object.keys\\(j.dependencies\\).sort\\(\\).join\\('\\\\n'\\)\\);\")"
+    ]
+  }
+}

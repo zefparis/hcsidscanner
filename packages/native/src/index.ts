@@ -37,4 +37,4 @@ export type {
   Step,
   StepStatus,
   StepperState,
-} from '@hcs/id-scanner-core';
+} from '@hcs/id-scanner-core/types';

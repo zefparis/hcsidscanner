@@ -12,12 +12,13 @@ export type {
   Step,
   StepStatus,
   StepperState,
-} from './types.js';
+} from './types';
 
-export { analyzeMRZ, MRZError } from './mrz.js';
+export { computeKycScore } from './utils';
+
+export { analyzeMRZ, MRZError } from './mrz';
 export {
   compareFaces,
-  computeKycScore,
   FaceMatchError,
   type CompareFacesOptions,
-} from './rekognition.js';
+} from './rekognition';

@@ -7,11 +7,11 @@
 
 import { useEffect, useMemo } from 'react';
 import { Text, View } from 'react-native';
-import {
-  computeKycScore,
-  type IDScannerConfig,
-  type IDVerificationResult,
-} from '@hcs/id-scanner-core';
+import { computeKycScore } from '@hcs/id-scanner-core/utils';
+import type {
+  IDScannerConfig,
+  IDVerificationResult,
+} from '@hcs/id-scanner-core/types';
 
 import { DocumentScannerNative } from './DocumentScannerNative';
 import { FaceMatchNative } from './FaceMatchNative';

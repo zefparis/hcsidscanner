@@ -16,8 +16,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@hcs/id-scanner-native":  ["./src/types/id-scanner-native.d.ts"],
-      "@hcs/id-scanner-core":    ["../../packages/core/dist/index.d.ts"]
+      "@hcs/id-scanner-native": ["../../packages/native/src/index.ts"],
+      "@hcs/id-scanner-core":   ["../../packages/core/src/index.ts"]
     }
   },
   "include": [

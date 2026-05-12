@@ -22,7 +22,7 @@ import {
 } from 'react-native-vision-camera';
 
 import { useIDVerificationNative } from '../hooks/useIDVerificationNative';
-import type { FaceMatchResult } from '@hcs/id-scanner-core';
+import type { FaceMatchResult } from '@hcs/id-scanner-core/types';
 
 interface Props {
   faceMatchEndpoint: string;

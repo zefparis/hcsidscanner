@@ -16,7 +16,7 @@
  * module resolution settings.
  */
 
-import type { DocumentData } from './types.js';
+import type { DocumentData } from './types';
 
 interface MrzParseResult {
   format: string;

@@ -14,7 +14,7 @@ import type {
   Step,
   StepStatus,
   StepperState,
-} from '@hcs/id-scanner-core';
+} from '@hcs/id-scanner-core/types';
 import type { PassportNfcResult } from '../nfc';
 
 interface IDVerificationNativeState {
